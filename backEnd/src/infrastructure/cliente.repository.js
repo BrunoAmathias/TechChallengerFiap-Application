@@ -20,6 +20,15 @@ class ClienteRepository {
     return result.rows[0];
   }
 
+  async buscarPorDocumento(documento) {
+    const result = await pool.query(
+      `SELECT * FROM clientes WHERE documento = $1`,
+      [documento]
+    );
+
+    return result.rows[0];
+  }
+
   async listar() {
     const result = await pool.query(`SELECT * FROM clientes`);
     return result.rows;

@@ -19,6 +19,15 @@ async buscarVeiculoPorId(id){
     return result.rows[0]
 }
 
+async buscarPorPlaca(placa){
+    const result = await pool.query(
+        `SELECT * FROM veiculos WHERE placa = $1`,
+        [placa]
+    );
+
+    return result.rows[0]
+}
+
 async listar(){
     const result = await pool.query(`SELECT * FROM veiculos`);
     return result.rows;
