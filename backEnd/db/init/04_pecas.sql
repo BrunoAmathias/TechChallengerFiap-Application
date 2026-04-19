@@ -1,0 +1,24 @@
+CREATE TABLE IF NOT EXISTS pecas (
+    id SERIAL PRIMARY KEY,
+    nome VARCHAR(255) NOT NULL,
+    descricao VARCHAR(255) NOT NULL,
+    valor VARCHAR(50) NOT NULL,
+    quantidade INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE OR REPLACE FUNCTION atualizar_updated_at_pecas()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_update_pecas ON pecas;
+
+CREATE TRIGGER trigger_update_pecas
+BEFORE UPDATE ON pecas
+FOR EACH ROW
+EXECUTE FUNCTION atualizar_updated_at_pecas();

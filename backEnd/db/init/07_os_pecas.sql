@@ -1,0 +1,9 @@
+-- OS_PECAS
+CREATE TABLE IF NOT EXISTS os_pecas (
+  id SERIAL PRIMARY KEY,
+  os_id INTEGER NOT NULL REFERENCES ordens_servico(id) ON DELETE CASCADE,
+  peca_id INTEGER NOT NULL REFERENCES pecas(id),
+  quantidade INTEGER NOT NULL DEFAULT 1,
+  valor_unitario NUMERIC(10,2) NOT NULL,
+  total NUMERIC(10,2) NOT NULL
+);

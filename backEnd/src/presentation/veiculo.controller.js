@@ -15,7 +15,7 @@ async criar(req, res){
         const result = await criaVeiculo.execute(req.body);
         return res.status(201).json(result);
     }catch(err){
-        return res.status(401).json({error: err.message})
+        return res.status(400).json({error: err.message})
     }
 }
 
