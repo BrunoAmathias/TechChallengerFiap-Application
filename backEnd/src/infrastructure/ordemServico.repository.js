@@ -112,16 +112,53 @@ class OrdemServicoRepository {
     return result.rows;
   }
 
-  async atualizarStatus(id, status) {
+  async atualizarStatus(id, status, aprovado = null) {
+    if (aprovado !== null) {
+      const result = await pool.query(
+        `UPDATE ordens_servico
+         SET status = $1,
+             aprovado = $2,
+             updated_at = NOW()
+         WHERE id = $3
+         RETURNING *`,
+        [status, aprovado, id]
+      );
+      return result.rows[0];
+    } else {
+      const result = await pool.query(
+        `UPDATE ordens_servico
+         SET status = $1,
+             updated_at = NOW()
+         WHERE id = $2
+         RETURNING *`,
+        [status, id]
+      );
+      return result.rows[0];
+    }
+  }
+
+  async atualizarStatusOsServico(status, start_time, id){
     const result = await pool.query(
-      `UPDATE ordens_servico
+      `UPDATE os_servicos
        SET status = $1,
+           start_time = $2,
            updated_at = NOW()
-       WHERE id = $2
-       RETURNING *`,
-      [status, id]
+       WHERE os_id = $3`,
+      [status, start_time, id]
     );
-    return result.rows[0];
+    return result.rows;
+  }
+
+  async finalizarServicosOs(id, end_time, status){
+    const result = await pool.query(
+      `UPDATE os_servicos
+       SET status = $1,
+           end_time = $2,
+           updated_at = NOW()
+       WHERE os_id = $3`,
+      [status, end_time, id]
+    );
+    return result.rows;
   }
 
   async aprovar(id, aprovado = true) {
@@ -135,6 +172,25 @@ class OrdemServicoRepository {
       [aprovado, aprovado ? "Em execução" : "Aguardando aprovação", id]
     );
     return result.rows[0];
+  }
+
+  async buscarServicosFinalizadosComTempoMedio(id) {
+    const result = await pool.query(
+      `SELECT
+        os.*,
+        s.nome,
+        s.descricao,
+        ROUND(EXTRACT(EPOCH FROM (os.end_time - os.start_time)) / 60, 2) as tempo_minutos,
+        ROUND(AVG(EXTRACT(EPOCH FROM (os.end_time - os.start_time)) / 60) OVER (), 2) as tempo_medio_minutos
+       FROM os_servicos os
+       JOIN servicos s ON s.id = os.servico_id
+       WHERE os.os_id = $1
+         AND os.status = 'Finalizada'
+         AND os.start_time IS NOT NULL
+         AND os.end_time IS NOT NULL`,
+      [id]
+    );
+    return result.rows;
   }
 }
 

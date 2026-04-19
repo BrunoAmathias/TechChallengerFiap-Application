@@ -256,6 +256,11 @@ Armazena os serviços vinculados a cada ordem de serviço.
 | quantidade     | INTEGER       | Quantidade do serviço              |
 | valor_unitario | NUMERIC(10,2) | Valor unitário do serviço          |
 | total          | NUMERIC(10,2) | Total do item no orçamento         |
+| status         | VARCHAR(50)   | Status do serviço individual       |
+| start_time     | TIMESTAMP     | Data/hora de início do serviço     |
+| end_time       | TIMESTAMP     | Data/hora de conclusão do serviço  |
+| created_at     | TIMESTAMP     | Data de criação                    |
+| updated_at     | TIMESTAMP     | Data de atualização                |
 
 ```sql
 CREATE TABLE IF NOT EXISTS os_servicos (
@@ -264,8 +269,30 @@ CREATE TABLE IF NOT EXISTS os_servicos (
   servico_id INTEGER NOT NULL REFERENCES servicos(id),
   quantidade INTEGER NOT NULL DEFAULT 1,
   valor_unitario NUMERIC(10,2) NOT NULL,
-  total NUMERIC(10,2) NOT NULL
+  total NUMERIC(10,2) NOT NULL,
+  status VARCHAR(50) DEFAULT 'Aguardando aprovação',
+  start_time TIMESTAMP,
+  end_time TIMESTAMP,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Trigger para atualizar automaticamente updated_at
+CREATE OR REPLACE FUNCTION atualizar_updated_at_os_servicos()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trigger_update_os_servicos ON os_servicos;
+
+CREATE TRIGGER trigger_update_os_servicos
+BEFORE UPDATE ON os_servicos
+FOR EACH ROW
+EXECUTE FUNCTION atualizar_updated_at_os_servicos();
+```
 ```
 
 ---

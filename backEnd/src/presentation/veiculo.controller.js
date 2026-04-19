@@ -37,7 +37,6 @@ async listar(req, res){
 
 async deletar(req, res){
         const id = req.params.id
-        console.log(id);
         await deletaVeiculo.execute(id)
         return res.status(204).json({message:"Veículo excluído com sucesso!", id:id})
 }

@@ -5,6 +5,8 @@ const {
   BuscarOrdensPorCliente,
   AtualizarStatusOrdemServico,
   AprovarOrdemServico,
+  AvancarStatusOrdemServico,
+  BuscarServicosFinalizadosComTempoMedio,
 } = require("../application/ordemServico.service");
 
 const OrdemServicoRepository = require("../infrastructure/ordemServico.repository");
@@ -24,7 +26,9 @@ const buscarOrdensServico = new BuscarOrdensServico(OrdemServicoRepository);
 const buscarOrdemServicoPorId = new BuscarOrdemServicoPorId(OrdemServicoRepository);
 const buscarOrdensPorCliente = new BuscarOrdensPorCliente(OrdemServicoRepository, ClienteRepository);
 const atualizarStatusOrdemServico = new AtualizarStatusOrdemServico(OrdemServicoRepository);
-const aprovarOrdemServico = new AprovarOrdemServico(OrdemServicoRepository);
+const aprovarOrdemServico = new AprovarOrdemServico(OrdemServicoRepository, ClienteRepository);
+const avancarStatusOrdemServico = new AvancarStatusOrdemServico(OrdemServicoRepository, ClienteRepository);
+const buscarServicosFinalizadosComTempoMedio = new BuscarServicosFinalizadosComTempoMedio(OrdemServicoRepository);
 
 class OrdemServicoController {
   async criar(req, res) {
@@ -80,6 +84,26 @@ class OrdemServicoController {
     const id = req.params.id;
     try {
       const result = await aprovarOrdemServico.execute(id);
+      return res.status(200).json(result);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  }
+
+  async avancar(req, res) {
+    const id = req.params.id;
+    try {
+      const result = await avancarStatusOrdemServico.execute(id);
+      return res.status(200).json(result);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  }
+
+  async buscarServicosFinalizados(req, res) {
+    const id = req.params.id;
+    try {
+      const result = await buscarServicosFinalizadosComTempoMedio.execute(id);
       return res.status(200).json(result);
     } catch (err) {
       return res.status(400).json({ error: err.message });
