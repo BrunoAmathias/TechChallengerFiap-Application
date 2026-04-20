@@ -1,12 +1,19 @@
 const Veiculos = require("../domain/veiculo");
 
-class CriarVeiculo{
-    constructor(veiculoRepository, ){
-        this.veiculoRepository = veiculoRepository;   
+class CriarVeiculo {
+    constructor(veiculoRepository) {
+        this.veiculoRepository = veiculoRepository;
     }
-    async execute(data){
-        const veiculo = new Veiculos(data)
-       return await this.veiculoRepository.criar(veiculo)
+
+    async execute(data) {
+        const veiculo = new Veiculos(data);
+
+        const placaJaExiste = await this.veiculoRepository.buscarPorPlaca(veiculo.placa);
+        if (placaJaExiste) {
+            throw new Error(`Já existe um veículo cadastrado com a placa ${veiculo.placa}`);
+        }
+
+        return await this.veiculoRepository.criar(veiculo);
     }
 }
 
