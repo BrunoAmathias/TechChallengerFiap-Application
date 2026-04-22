@@ -17,6 +17,7 @@
     "swagger-ui-express": "^5.0.1"
   },
   "devDependencies": {
+    "@sonar/scan": "^4.3.6",
     "jest": "^29.7.0",
     "nodemon": "^3.1.14",
     "supertest": "^6.3.4"

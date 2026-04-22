@@ -12,7 +12,8 @@ describe('Veiculo Service', () => {
       buscarVeiculoPorId: jest.fn(),
       listar: jest.fn(),
       atualizar: jest.fn(),
-      deletar: jest.fn()
+      deletar: jest.fn(),
+      buscarPorPlaca: jest.fn() // ✅ CORREÇÃO AQUI
     };
 
     Veiculos.mockClear();
@@ -21,6 +22,7 @@ describe('Veiculo Service', () => {
   describe('CriarVeiculo', () => {
     it('should create a veiculo successfully', async () => {
       const service = new CriarVeiculo(mockVeiculoRepository);
+
       const veiculoData = {
         marca: 'Toyota',
         modelo: 'Corolla',
@@ -29,31 +31,63 @@ describe('Veiculo Service', () => {
       };
 
       const mockVeiculo = { id: 1, ...veiculoData };
+
       Veiculos.mockImplementation(() => mockVeiculo);
+
+      // ✅ Garantir que NÃO existe placa duplicada
+      mockVeiculoRepository.buscarPorPlaca.mockResolvedValue(null);
+
       mockVeiculoRepository.criar.mockResolvedValue(mockVeiculo);
 
       const result = await service.execute(veiculoData);
 
       expect(Veiculos).toHaveBeenCalledWith(veiculoData);
+      expect(mockVeiculoRepository.buscarPorPlaca).toHaveBeenCalledWith(mockVeiculo.placa);
       expect(mockVeiculoRepository.criar).toHaveBeenCalledWith(mockVeiculo);
       expect(result).toBe(mockVeiculo);
     });
 
+    it('should throw error if placa already exists', async () => {
+      const service = new CriarVeiculo(mockVeiculoRepository);
+
+      const veiculoData = {
+        marca: 'Toyota',
+        modelo: 'Corolla',
+        ano: 2020,
+        placa: 'ABC-1234'
+      };
+
+      const mockVeiculo = { ...veiculoData };
+
+      Veiculos.mockImplementation(() => mockVeiculo);
+
+      // ✅ Simula placa duplicada
+      mockVeiculoRepository.buscarPorPlaca.mockResolvedValue({ id: 99 });
+
+      await expect(service.execute(veiculoData))
+        .rejects
+        .toThrow(`Já existe um veículo cadastrado com a placa ${mockVeiculo.placa}`);
+    });
+
     it('should throw error if Veiculo validation fails', async () => {
       const service = new CriarVeiculo(mockVeiculoRepository);
+
       const veiculoData = { marca: '', modelo: 'Corolla' };
 
       Veiculos.mockImplementation(() => {
         throw new Error('Marca é obrigatória');
       });
 
-      await expect(service.execute(veiculoData)).rejects.toThrow('Marca é obrigatória');
+      await expect(service.execute(veiculoData))
+        .rejects
+        .toThrow('Marca é obrigatória');
     });
   });
 
   describe('BuscarVeiculoPorId', () => {
     it('should return veiculo if found', async () => {
       const service = new BuscarVeiculoPorId(mockVeiculoRepository);
+
       const mockVeiculo = { id: 1, marca: 'Toyota' };
 
       mockVeiculoRepository.buscarVeiculoPorId.mockResolvedValue(mockVeiculo);
@@ -69,14 +103,20 @@ describe('Veiculo Service', () => {
 
       mockVeiculoRepository.buscarVeiculoPorId.mockResolvedValue(null);
 
-      await expect(service.execute(1)).rejects.toThrow('Veiculo não encontrado');
+      await expect(service.execute(1))
+        .rejects
+        .toThrow('Veiculo não encontrado');
     });
   });
 
   describe('listarVeiculos', () => {
     it('should return list of veiculos', async () => {
       const service = new listarVeiculos(mockVeiculoRepository);
-      const mockVeiculos = [{ id: 1, marca: 'Toyota' }, { id: 2, marca: 'Honda' }];
+
+      const mockVeiculos = [
+        { id: 1, marca: 'Toyota' },
+        { id: 2, marca: 'Honda' }
+      ];
 
       mockVeiculoRepository.listar.mockResolvedValue(mockVeiculos);
 
@@ -90,6 +130,7 @@ describe('Veiculo Service', () => {
   describe('atualizarVeiculo', () => {
     it('should update veiculo successfully', async () => {
       const service = new atualizarVeiculo(mockVeiculoRepository);
+
       const updateData = { marca: 'Toyota Updated' };
 
       mockVeiculoRepository.atualizar.mockResolvedValue({ id: 1, ...updateData });

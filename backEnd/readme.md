@@ -36,7 +36,7 @@ O sistema tem como objetivo digitalizar e centralizar o fluxo operacional de uma
 
 | Tecnologia | Versão | Uso |
 |---|---|---|
-| Node.js | 18 | Runtime |
+| Node.js | 24| Runtime |
 | Express | 5 | Framework HTTP |
 | PostgreSQL | 15 | Banco de dados |
 | JSON Web Token | 9 | Autenticação |

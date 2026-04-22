@@ -113,7 +113,7 @@ describe('Servico Functional Tests (Mocked)', () => {
         .get('/servicos/1')
         .set('Authorization', `Bearer ${token}`);
 
-      expect(response.status).toBe(201);
+      expect(response.status).toBe(200);
       expect(response.body).toEqual(mockServico);
       expect(ServicoRepository.buscarPorId).toHaveBeenCalledWith('1');
     });

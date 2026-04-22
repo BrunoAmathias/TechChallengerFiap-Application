@@ -1,0 +1,7 @@
+organization=brunoamathias
+projectKey=BrunoAmathias_TechChallengerFiap
+serverUrl=https://sonarcloud.io
+serverVersion=8.0.0.85848
+dashboardUrl=https://sonarcloud.io/dashboard?id=BrunoAmathias_TechChallengerFiap
+ceTaskId=AZ2wl_RY5LzQQD4O9e-7
+ceTaskUrl=https://sonarcloud.io/api/ce/task?id=AZ2wl_RY5LzQQD4O9e-7

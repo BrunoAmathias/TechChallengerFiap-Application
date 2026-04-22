@@ -31,7 +31,7 @@ class ServicoController{
          const id = req.params.id
         try {
             const result = await buscarServicoPorId.execute(id)
-            return res.status(201).json(result)
+            return res.status(200).json(result)
         } catch (err) {
             return res.status(401).json({error: err.message})
         }

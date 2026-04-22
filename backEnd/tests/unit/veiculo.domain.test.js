@@ -8,7 +8,7 @@ describe('Veiculos Domain', () => {
         marca: 'Toyota',
         modelo: 'Corolla',
         ano: 2020,
-        placa: 'ABC-1234'
+        placa: 'ABC1234'
       };
 
       const veiculo = new Veiculos(veiculoData);
@@ -17,14 +17,14 @@ describe('Veiculos Domain', () => {
       expect(veiculo.marca).toBe('Toyota');
       expect(veiculo.modelo).toBe('Corolla');
       expect(veiculo.ano).toBe(2020);
-      expect(veiculo.placa).toBe('ABC-1234');
+      expect(veiculo.placa).toBe('ABC1234');
     });
 
     it('should throw error for missing marca', () => {
       const veiculoData = {
         modelo: 'Corolla',
         ano: 2020,
-        placa: 'ABC-1234'
+        placa: 'ABC1234'
       };
 
       expect(() => new Veiculos(veiculoData)).toThrow('Marca é obrigatória');
@@ -34,20 +34,20 @@ describe('Veiculos Domain', () => {
       const veiculoData = {
         marca: 'Toyota',
         ano: 2020,
-        placa: 'ABC-1234'
+        placa: 'ABC1234'
       };
 
-      expect(() => new Veiculos(veiculoData)).toThrow('modelo é obrigatória');
+      expect(() => new Veiculos(veiculoData)).toThrow('Modelo é obrigatório');
     });
 
     it('should throw error for missing ano', () => {
       const veiculoData = {
         marca: 'Toyota',
         modelo: 'Corolla',
-        placa: 'ABC-1234'
+        placa: 'ABC1234'
       };
 
-      expect(() => new Veiculos(veiculoData)).toThrow('ano é obrigatória');
+      expect(() => new Veiculos(veiculoData)).toThrow('Ano é obrigatório');
     });
 
     it('should throw error for missing placa', () => {
@@ -57,7 +57,7 @@ describe('Veiculos Domain', () => {
         ano: 2020
       };
 
-      expect(() => new Veiculos(veiculoData)).toThrow('placa é obrigatória');
+      expect(() => new Veiculos(veiculoData)).toThrow('Placa é obrigatória');
     });
   });
 });
