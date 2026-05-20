@@ -74,7 +74,19 @@ class OrdemServicoRepository {
   }
 
   async listar() {
-    const result = await pool.query(`SELECT * FROM ordens_servico ORDER BY created_at DESC`);
+    const result = await pool.query(
+      `SELECT * FROM ordens_servico
+      WHERE status not in ('Finalizada', 'Entregue')
+      ORDER BY case when status = 'Em execução' then 1
+           when status = 'Aguardando aprovação' then 2
+           when status = 'Em diagnóstico' then 3
+           when status = 'Recebida' then 4
+           when status = 'Finalizada' then 5
+           when status = 'Entregue' then 6
+      else 7 end, created_at ASC`
+
+    );
+
     return result.rows;
   }
 
@@ -169,7 +181,7 @@ class OrdemServicoRepository {
            updated_at = NOW()
        WHERE id = $3
        RETURNING *`,
-      [aprovado, aprovado ? "Em execução" : "Aguardando aprovação", id]
+      [aprovado, aprovado ? "Em execução" : "Recusada", id]
     );
     return result.rows[0];
   }

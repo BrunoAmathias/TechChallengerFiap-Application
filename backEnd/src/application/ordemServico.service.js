@@ -193,13 +193,13 @@ class AprovarOrdemServico {
     this.clienteRepository = clienteRepository;
   }
 
-  async execute(id) {
-    const ordemAprovada = await this.ordemServicoRepository.aprovar(id, true);
+  async execute(id, aprovado = true) {
+    const ordemAprovada = await this.ordemServicoRepository.aprovar(id, aprovado);
 
     // Buscar dados do cliente para notificação
     const cliente = await this.clienteRepository.buscarPorId(ordemAprovada.cliente_id);
 
-    if (cliente) {
+    if (cliente && aprovado) {
       // Enviar notificação de email (mock)
       await NotificationService.enviarEmailAprovacao(ordemAprovada, cliente);
     }

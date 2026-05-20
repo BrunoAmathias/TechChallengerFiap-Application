@@ -82,8 +82,9 @@ class OrdemServicoController {
 
   async aprovar(req, res) {
     const id = req.params.id;
+  const aprovado = req.body?.aprovado ?? true;    
     try {
-      const result = await aprovarOrdemServico.execute(id);
+      const result = await aprovarOrdemServico.execute(id, aprovado);
       return res.status(200).json(result);
     } catch (err) {
       return res.status(400).json({ error: err.message });
