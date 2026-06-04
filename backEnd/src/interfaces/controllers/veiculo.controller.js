@@ -1,5 +1,5 @@
-const {CriarVeiculo, listarVeiculos, BuscarVeiculoPorId, deletarVeiculo, atualizarVeiculo} = require("../application/veiculo.service")
-const VeiculoRepository = require("../infrastructure/veiculo.repository")
+const {CriarVeiculo, listarVeiculos, BuscarVeiculoPorId, deletarVeiculo, atualizarVeiculo} = require("../../application/veiculo.service")
+const VeiculoRepository = require("../../infrastructure/repositories/veiculo.repository")
 
 const criaVeiculo = new CriarVeiculo(VeiculoRepository)
 const listaVeiculos = new listarVeiculos(VeiculoRepository)

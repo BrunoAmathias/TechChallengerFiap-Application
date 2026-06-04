@@ -1,4 +1,4 @@
-const pool = require("./database/connection");
+const pool = require("../database/connection");
 
 class OrdemServicoRepository {
   async criar(ordem, servicosItems = [], pecasItems = []) {

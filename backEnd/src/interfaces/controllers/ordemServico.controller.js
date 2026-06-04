@@ -7,13 +7,13 @@ const {
   AprovarOrdemServico,
   AvancarStatusOrdemServico,
   BuscarServicosFinalizadosComTempoMedio,
-} = require("../application/ordemServico.service");
+} = require("../../application/ordemServico.service");
 
-const OrdemServicoRepository = require("../infrastructure/ordemServico.repository");
-const ClienteRepository = require("../infrastructure/cliente.repository");
-const VeiculoRepository = require("../infrastructure/veiculo.repository");
-const ServicoRepository = require("../infrastructure/servico.repository");
-const PecaRepository = require("../infrastructure/peca.repository");
+const OrdemServicoRepository = require("../../infrastructure/repositories/ordemServico.repository");
+const ClienteRepository = require("../../infrastructure/repositories/cliente.repository");
+const VeiculoRepository = require("../../infrastructure/repositories/veiculo.repository");
+const ServicoRepository = require("../../infrastructure/repositories/servico.repository");
+const PecaRepository = require("../../infrastructure/repositories/peca.repository");
 
 const criarOrdemServico = new CriarOrdemServico(
   OrdemServicoRepository,

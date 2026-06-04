@@ -1,21 +1,21 @@
 const express = require("express");
 const router = express.Router();
-const authMiddleware = require("./middlewares/auth.middleware");
-const ClienteController = require("./cliente.controller");
+const authMiddleware = require("../middlewares/auth.middleware");
+const VeiculoController = require("../controllers/veiculo.controller");
 
 /**
  * @swagger
  * tags:
- *   name: Clientes
- *   description: Gerenciamento de clientes
+ *   name: Veículos
+ *   description: Gerenciamento de veículos
  */
 
 /**
  * @swagger
- * /clientes:
+ * /veiculos:
  *   post:
- *     summary: Cria um novo cliente
- *     tags: [Clientes]
+ *     summary: Cadastra um novo veículo
+ *     tags: [Veículos]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -25,69 +25,68 @@ const ClienteController = require("./cliente.controller");
  *           schema:
  *             type: object
  *             required:
- *               - nome
- *               - email
- *               - tipo_documento
- *               - documento
+ *               - placa
+ *               - modelo
+ *               - marca
+ *               - ano
  *             properties:
- *               nome:
+ *               placa:
  *                 type: string
- *                 example: João Silva
- *               email:
+ *                 example: ABC1234
+ *               modelo:
  *                 type: string
- *                 example: joao@email.com
- *               telefone:
+ *                 example: Civic
+ *               marca:
  *                 type: string
- *                 example: "11999999999"
- *               tipo_documento:
+ *                 example: Honda
+ *               ano:
+ *                 type: integer
+ *                 example: 2020
+ *               cor:
  *                 type: string
- *                 enum: [CPF, CNPJ]
- *                 example: CPF
- *               documento:
- *                 type: string
- *                 example: "52998224725"
+ *                 example: Prata
  *     responses:
  *       201:
- *         description: Cliente criado com sucesso
+ *         description: Veículo cadastrado com sucesso
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Cliente'
+ *               $ref: '#/components/schemas/Veiculo'
  *       400:
  *         description: Dados inválidos
  *       401:
  *         description: Não autorizado
  */
-router.post("/clientes", authMiddleware, (req, res) => ClienteController.criar(req, res));
+router.post("/veiculos", authMiddleware, (req, res) => VeiculoController.criar(req, res));
 
 /**
  * @swagger
- * /clientes:
+ * /veiculos:
  *   get:
- *     summary: Lista todos os clientes
- *     tags: [Clientes]
+ *     summary: Lista todos os veículos
+ *     tags: [Veículos]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Lista de clientes
+ *         description: Lista de veículos
  *         content:
  *           application/json:
  *             schema:
  *               type: array
  *               items:
- *                 $ref: '#/components/schemas/Cliente'
+ *                 $ref: '#/components/schemas/Veiculo'
  *       401:
  *         description: Não autorizado
  */
-router.get("/clientes", authMiddleware, (req, res) => ClienteController.listar(req, res));
+router.get("/veiculos", authMiddleware, (req, res) => VeiculoController.listar(req, res));
 
 /**
  * @swagger
- * /clientes/{id}:
+ * /veiculos/{id}:
  *   get:
- *     summary: Busca cliente por ID
- *     tags: [Clientes]
+ *     summary: Busca veículo por ID
+ *     tags: [Veículos]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -96,27 +95,27 @@ router.get("/clientes", authMiddleware, (req, res) => ClienteController.listar(r
  *         required: true
  *         schema:
  *           type: integer
- *         description: ID do cliente
+ *         description: ID do veículo
  *     responses:
  *       200:
- *         description: Cliente encontrado
+ *         description: Veículo encontrado
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Cliente'
- *       404:
- *         description: Cliente não encontrado
+ *               $ref: '#/components/schemas/Veiculo'
+ *       400:
+ *         description: Veículo não encontrado
  *       401:
  *         description: Não autorizado
  */
-router.get("/clientes/:id", authMiddleware, (req, res) => ClienteController.buscarPorId(req, res));
+router.get("/veiculos/:id", authMiddleware, (req, res) => VeiculoController.buscarPorId(req, res));
 
 /**
  * @swagger
- * /clientes/{id}:
+ * /veiculos/{id}:
  *   put:
- *     summary: Atualiza dados de um cliente
- *     tags: [Clientes]
+ *     summary: Atualiza dados de um veículo
+ *     tags: [Veículos]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -125,7 +124,7 @@ router.get("/clientes/:id", authMiddleware, (req, res) => ClienteController.busc
  *         required: true
  *         schema:
  *           type: integer
- *         description: ID do cliente
+ *         description: ID do veículo
  *     requestBody:
  *       required: true
  *       content:
@@ -133,36 +132,36 @@ router.get("/clientes/:id", authMiddleware, (req, res) => ClienteController.busc
  *           schema:
  *             type: object
  *             properties:
- *               nome:
+ *               placa:
  *                 type: string
- *               email:
+ *               modelo:
  *                 type: string
- *               telefone:
+ *               marca:
  *                 type: string
- *               tipo_documento:
- *                 type: string
- *               documento:
+ *               ano:
+ *                 type: integer
+ *               cor:
  *                 type: string
  *     responses:
  *       200:
- *         description: Cliente atualizado com sucesso
+ *         description: Veículo atualizado com sucesso
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Cliente'
+ *               $ref: '#/components/schemas/Veiculo'
  *       400:
  *         description: Dados inválidos
  *       401:
  *         description: Não autorizado
  */
-router.put("/clientes/:id", authMiddleware, (req, res) => ClienteController.atualizar(req, res));
+router.put("/veiculos/:id", authMiddleware, (req, res) => VeiculoController.atualizar(req, res));
 
 /**
  * @swagger
- * /clientes/{id}:
+ * /veiculos/{id}:
  *   delete:
- *     summary: Remove um cliente
- *     tags: [Clientes]
+ *     summary: Remove um veículo
+ *     tags: [Veículos]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -171,13 +170,13 @@ router.put("/clientes/:id", authMiddleware, (req, res) => ClienteController.atua
  *         required: true
  *         schema:
  *           type: integer
- *         description: ID do cliente
+ *         description: ID do veículo
  *     responses:
  *       204:
- *         description: Cliente removido com sucesso
+ *         description: Veículo removido com sucesso
  *       401:
  *         description: Não autorizado
  */
-router.delete("/clientes/:id", authMiddleware, (req, res) => ClienteController.deletar(req, res));
+router.delete("/veiculos/:id", authMiddleware, (req, res) => VeiculoController.deletar(req, res));
 
 module.exports = router;

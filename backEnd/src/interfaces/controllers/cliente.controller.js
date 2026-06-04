@@ -1,6 +1,6 @@
-const { CriarCliente, BuscarClientePorId, ListarClientes, AtualizarCliente, DeletarCliente } = require("../application/cliente.service");
-const clienteRepository = require("../infrastructure/cliente.repository"); 
-const ValidarDocumento = require("../infrastructure/utils/cpf-validator");
+const { CriarCliente, BuscarClientePorId, ListarClientes, AtualizarCliente, DeletarCliente } = require("../../application/cliente.service");
+const clienteRepository = require("../../infrastructure/repositories/cliente.repository"); 
+const ValidarDocumento = require("../../infrastructure/utils/cpf-validator");
 
 
 const Validador = new ValidarDocumento()

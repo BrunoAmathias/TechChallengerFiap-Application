@@ -1,4 +1,4 @@
-const pool = require('./database/connection.js');
+const pool = require('../database/connection.js');
 
 class UsuarioRepository {
   async criar(usuario) {

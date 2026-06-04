@@ -1,21 +1,21 @@
 const express = require("express");
 const router = express.Router();
-const authMiddleware = require("./middlewares/auth.middleware");
-const PecaController = require("./peca.controller");
+const authMiddleware = require("../middlewares/auth.middleware");
+const ServicoController = require("../controllers/servico.controller");
 
 /**
  * @swagger
  * tags:
- *   name: Peças
- *   description: Gerenciamento de peças
+ *   name: Serviços
+ *   description: Gerenciamento de serviços
  */
 
 /**
  * @swagger
- * /pecas:
+ * /servicos:
  *   post:
- *     summary: Cadastra uma nova peça
- *     tags: [Peças]
+ *     summary: Cadastra um novo serviço
+ *     tags: [Serviços]
  *     security:
  *       - bearerAuth: []
  *     requestBody:
@@ -27,62 +27,56 @@ const PecaController = require("./peca.controller");
  *             required:
  *               - nome
  *               - valor
- *               - quantidade
  *             properties:
  *               nome:
  *                 type: string
- *                 example: Filtro de óleo
+ *                 example: Troca de óleo
  *               descricao:
  *                 type: string
- *                 example: Filtro de óleo para motor
+ *                 example: Troca completa do óleo do motor
  *               valor:
  *                 type: number
- *                 example: 25.00
- *               quantidade:
- *                 type: integer
- *                 example: 50
+ *                 example: 150.00
  *     responses:
  *       201:
- *         description: Peça cadastrada com sucesso
+ *         description: Serviço cadastrado com sucesso
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Peca'
- *       400:
- *         description: Dados inválidos
+ *               $ref: '#/components/schemas/Servico'
  *       401:
  *         description: Não autorizado
  */
-router.post("/pecas", authMiddleware, (req, res) => PecaController.criar(req, res));
+router.post("/servicos", authMiddleware, (req, res) => ServicoController.criar(req, res));
 
 /**
  * @swagger
- * /pecas:
+ * /servicos:
  *   get:
- *     summary: Lista todas as peças
- *     tags: [Peças]
+ *     summary: Lista todos os serviços
+ *     tags: [Serviços]
  *     security:
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: Lista de peças
+ *         description: Lista de serviços
  *         content:
  *           application/json:
  *             schema:
  *               type: array
  *               items:
- *                 $ref: '#/components/schemas/Peca'
+ *                 $ref: '#/components/schemas/Servico'
  *       401:
  *         description: Não autorizado
  */
-router.get("/pecas", authMiddleware, (req, res) => PecaController.buscar(req, res));
+router.get("/servicos", authMiddleware, (req, res) => ServicoController.buscar(req, res));
 
 /**
  * @swagger
- * /pecas/{id}:
+ * /servicos/{id}:
  *   get:
- *     summary: Busca peça por ID
- *     tags: [Peças]
+ *     summary: Busca serviço por ID
+ *     tags: [Serviços]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -91,27 +85,25 @@ router.get("/pecas", authMiddleware, (req, res) => PecaController.buscar(req, re
  *         required: true
  *         schema:
  *           type: integer
- *         description: ID da peça
+ *         description: ID do serviço
  *     responses:
- *       200:
- *         description: Peça encontrada
+ *       201:
+ *         description: Serviço encontrado
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Peca'
- *       404:
- *         description: Peça não encontrada
+ *               $ref: '#/components/schemas/Servico'
  *       401:
  *         description: Não autorizado
  */
-router.get("/pecas/:id", authMiddleware, (req, res) => PecaController.buscarPorId(req, res));
+router.get("/servicos/:id", authMiddleware, (req, res) => ServicoController.buscarPorId(req, res));
 
 /**
  * @swagger
- * /pecas/{id}:
+ * /servicos/{id}:
  *   put:
- *     summary: Atualiza dados de uma peça
- *     tags: [Peças]
+ *     summary: Atualiza dados de um serviço
+ *     tags: [Serviços]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -120,7 +112,7 @@ router.get("/pecas/:id", authMiddleware, (req, res) => PecaController.buscarPorI
  *         required: true
  *         schema:
  *           type: integer
- *         description: ID da peça
+ *         description: ID do serviço
  *     requestBody:
  *       required: true
  *       content:
@@ -134,28 +126,26 @@ router.get("/pecas/:id", authMiddleware, (req, res) => PecaController.buscarPorI
  *                 type: string
  *               valor:
  *                 type: number
- *               quantidade:
- *                 type: integer
  *     responses:
  *       200:
- *         description: Peça atualizada com sucesso
+ *         description: Serviço atualizado com sucesso
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/Peca'
+ *               $ref: '#/components/schemas/Servico'
  *       400:
  *         description: Dados inválidos
  *       401:
  *         description: Não autorizado
  */
-router.put("/pecas/:id", authMiddleware, (req, res) => PecaController.atualizar(req, res));
+router.put("/servicos/:id", authMiddleware, (req, res) => ServicoController.atualizar(req, res));
 
 /**
  * @swagger
- * /pecas/{id}:
+ * /servicos/{id}:
  *   delete:
- *     summary: Remove uma peça
- *     tags: [Peças]
+ *     summary: Remove um serviço
+ *     tags: [Serviços]
  *     security:
  *       - bearerAuth: []
  *     parameters:
@@ -164,13 +154,15 @@ router.put("/pecas/:id", authMiddleware, (req, res) => PecaController.atualizar(
  *         required: true
  *         schema:
  *           type: integer
- *         description: ID da peça
+ *         description: ID do serviço
  *     responses:
  *       204:
- *         description: Peça removida com sucesso
+ *         description: Serviço removido com sucesso
+ *       400:
+ *         description: Erro ao remover
  *       401:
  *         description: Não autorizado
  */
-router.delete("/pecas/:id", authMiddleware, (req, res) => PecaController.deletar(req, res));
+router.delete("/servicos/:id", authMiddleware, (req, res) => ServicoController.deletar(req, res));
 
 module.exports = router;

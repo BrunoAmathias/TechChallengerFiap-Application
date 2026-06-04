@@ -1,5 +1,5 @@
-﻿const { CriarPeca, BuscarPecas, BuscarPecaPorId, AtualizarPeca, DeletarPeca } = require("../application/peca.service");
-const PecaRepository = require("../infrastructure/peca.repository");
+﻿const { CriarPeca, BuscarPecas, BuscarPecaPorId, AtualizarPeca, DeletarPeca } = require("../../application/peca.service");
+const PecaRepository = require("../../infrastructure/repositories/peca.repository");
 
 const criarPeca = new CriarPeca(PecaRepository);
 const buscarPecas = new BuscarPecas(PecaRepository);

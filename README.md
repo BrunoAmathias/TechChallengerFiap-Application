@@ -57,7 +57,7 @@ src/
 ├── domain/           # Entidades e regras de negócio puras
 ├── application/      # Casos de uso (orquestração dos fluxos)
 ├── infrastructure/   # Repositórios, banco de dados e utilitários
-└── presentation/     # Controllers, rotas e middlewares HTTP
+└── interfaces/     # Controllers, rotas e middlewares HTTP
 ```
 
 **Fluxo de uma requisição:**
@@ -303,7 +303,7 @@ backEnd/
 │   │   ├── servico.repository.js
 │   │   ├── peca.repository.js
 │   │   └── ordemServico.repository.js
-│   └── presentation/            # Controllers, rotas e middlewares
+│   └── interfaces/            # Controllers, rotas e middlewares
 │       ├── middlewares/
 │       │   └── auth.middleware.js
 │       ├── auth.controller.js / auth.routes.js

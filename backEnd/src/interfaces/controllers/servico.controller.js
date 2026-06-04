@@ -1,5 +1,5 @@
-const {CriarServico, BuscarServico, BuscarServicoPorId, DeletarServico, AtualizarServico} = require("../application/servico.service")
-const ServicoRepository = require("../infrastructure/servico.repository")
+const {CriarServico, BuscarServico, BuscarServicoPorId, DeletarServico, AtualizarServico} = require("../../application/servico.service")
+const ServicoRepository = require("../../infrastructure/repositories/servico.repository")
 
 const criaServico = new CriarServico(ServicoRepository)
 const buscarServico = new BuscarServico(ServicoRepository)

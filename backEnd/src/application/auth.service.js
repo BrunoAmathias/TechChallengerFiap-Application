@@ -1,4 +1,4 @@
-const usuarioRepository = require('../infrastructure/auth.repository');
+const usuarioRepository = require('../infrastructure/repositories/auth.repository');
 const jwt = require('jsonwebtoken');
 
 class AuthService {

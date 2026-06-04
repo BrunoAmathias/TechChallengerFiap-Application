@@ -117,12 +117,12 @@ const options = {
     ],
   },
   apis: [
-    './src/presentation/auth.routes.js',
-    './src/presentation/cliente.routes.js',
-    './src/presentation/veiculo.routes.js',
-    './src/presentation/servico.routes.js',
-    './src/presentation/peca.routes.js',
-    './src/presentation/ordemServico.routes.js',
+    './src/interfaces/auth.routes.js',
+    './src/interfaces/cliente.routes.js',
+    './src/interfaces/veiculo.routes.js',
+    './src/interfaces/servico.routes.js',
+    './src/interfaces/peca.routes.js',
+    './src/interfaces/ordemServico.routes.js',
   ],
 };
 
