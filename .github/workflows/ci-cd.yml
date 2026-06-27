@@ -33,15 +33,25 @@ jobs:
 
 
       # ✅ TESTES
+      
       - name: Rodar testes unitários
         run: npm run test:unit
+        working-directory: ./backEnd
 
-      - name: Rodar testes integração
+      - name: Rodar testes funcionais
         run: npm run test:functional
+        working-directory: ./backEnd
+        env:
+          JWT_SECRET: test-secret
+          MOCK_USER_EMAIL: ${{ secrets.MOCK_USER_EMAIL }}
+          MOCK_USER_PASSWORD: ${{ secrets.MOCK_USER_PASSWORD }}
+          MOCK_USER_ID: ${{ secrets.MOCK_USER_ID }}
+
 
       - name: Rodar testes integração
         run: npm run test:integration
-
+        working-directory: ./backEnd
+  
       # ✅ BUILD APP
       - name: Build da aplicação
         run: npm run build || echo "sem build"
