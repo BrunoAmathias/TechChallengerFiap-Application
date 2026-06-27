@@ -117,17 +117,6 @@ jobs:
           mkdir -p $HOME/.kube
           echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
 
-      - name: Deploy PostgreSQL
-        run: kubectl apply -f backEnd/k8s/postgres.yaml
 
-      - name: Deploy API
-        run: kubectl apply -f backEnd/k8s/api.yaml
-
-      - name: Deploy Service
-        run: kubectl apply -f backEnd/k8s/service.yaml
-
-      - name: Deploy HPA
-        run: kubectl apply -f backEnd/k8s/hpa.yaml
-
-      - name: Restart Deployment
-        run: kubectl rollout restart deployment/oficina-api
+      - name: Aplicar manifestos Kubernetes
+        run: kubectl apply -f backEnd/k8s/
