@@ -2,7 +2,7 @@ name: CI/CD - Oficina API
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "main"]
 
 jobs:
   pipeline:
