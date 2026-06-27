@@ -37,6 +37,9 @@ jobs:
         run: npm run test:unit
 
       - name: Rodar testes integração
+        run: npm run test:functional
+
+      - name: Rodar testes integração
         run: npm run test:integration
 
       # ✅ BUILD APP
