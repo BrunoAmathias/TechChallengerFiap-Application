@@ -15,7 +15,11 @@ const veiculoRoutes = require("./interfaces/routes/veiculo.routes")
 const servicoRoutes = require("./interfaces/routes/servico.routes")
 const pecaRoutes = require("./interfaces/routes/peca.routes")
 const ordemServicoRoutes = require("./interfaces/routes/ordemServico.routes")
- 
+const healthK8sRoutes = require("./interfaces/routes/health.k8s.routes")
+
+
+
+app.use(healthK8sRoutes);
 app.use(clienteRoutes);
 app.use(veiculoRoutes);
 app.use(servicoRoutes)
