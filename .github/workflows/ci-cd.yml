@@ -18,8 +18,19 @@ jobs:
         with:
           node-version: 18
 
+      
       - name: Instalar dependências
         run: npm install
+        working-directory: ./backEnd
+      
+      - name: Rodar testes
+        run: npm test
+        working-directory: ./backEnd
+      
+      - name: Build da aplicação
+        run: npm run build || echo "sem build"
+        working-directory: ./backEnd
+
 
       # ✅ TESTES
       - name: Rodar testes unitários
