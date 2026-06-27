@@ -1,4 +1,15 @@
+# Modules
 node_modules/
+
+#ENV
 .env
 .env.test
+
+#Kubernetes
 api-secret.yaml
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
