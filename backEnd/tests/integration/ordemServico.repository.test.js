@@ -1,9 +1,9 @@
 require('dotenv').config();
-const OrdemServicoRepository = require('../../src/infrastructure/ordemServico.repository');
-const ClienteRepository = require('../../src/infrastructure/cliente.repository');
-const VeiculoRepository = require('../../src/infrastructure/veiculo.repository');
-const ServicoRepository = require('../../src/infrastructure/servico.repository');
-const PecaRepository = require('../../src/infrastructure/peca.repository');
+const OrdemServicoRepository = require('../../src/infrastructure/repositories/ordemServico.repository');
+const ClienteRepository = require('../../src/infrastructure/repositories/cliente.repository');
+const VeiculoRepository = require('../../src/infrastructure/repositories/veiculo.repository');
+const ServicoRepository = require('../../src/infrastructure/repositories/servico.repository');
+const PecaRepository = require('../../src/infrastructure/repositories/peca.repository');
 
 describe('OrdemServico Repository Integration Tests', () => {
   let createdOrdemId;

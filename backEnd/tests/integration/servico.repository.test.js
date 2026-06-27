@@ -1,5 +1,5 @@
 require('dotenv').config();
-const ServicoRepository = require('../../src/infrastructure/servico.repository');
+const ServicoRepository = require('../../src/infrastructure/repositories/servico.repository');
 
 
 describe('Servico Repository Integration Tests', () => {

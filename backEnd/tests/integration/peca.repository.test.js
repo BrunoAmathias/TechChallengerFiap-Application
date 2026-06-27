@@ -1,5 +1,5 @@
 require('dotenv').config();
-const PecaRepository = require('../../src/infrastructure/peca.repository');
+const PecaRepository = require('../../src/infrastructure/repositories/peca.repository');
 
 
 describe('Peca Repository Integration Tests', () => {

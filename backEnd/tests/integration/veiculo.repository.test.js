@@ -1,6 +1,6 @@
 require('dotenv').config();
 const pool = require('../../src/infrastructure/database/connection'); // ← caminho correto
-const VeiculoRepository = require('../../src/infrastructure/veiculo.repository');
+const VeiculoRepository = require('../../src/infrastructure/repositories/veiculo.repository');
 
 describe('Veiculo Repository Integration Tests', () => {
   let createdVeiculoId;

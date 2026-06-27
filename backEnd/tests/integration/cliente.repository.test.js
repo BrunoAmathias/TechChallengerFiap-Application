@@ -1,5 +1,5 @@
 require('dotenv').config();
-const ClienteRepository = require('../../src/infrastructure/cliente.repository');
+const ClienteRepository = require('../../src/infrastructure/repositories/cliente.repository');
 
 
 describe('Cliente Repository Integration Tests', () => {

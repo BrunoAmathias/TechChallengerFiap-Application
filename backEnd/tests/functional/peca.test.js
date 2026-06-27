@@ -2,9 +2,9 @@ const request = require('supertest');
 const app = require('../../src/server');
 
 // Mock dos repositórios e serviços
-jest.mock('../../src/infrastructure/peca.repository');
+jest.mock('../../src/infrastructure/repositories/peca.repository');
 
-const PecaRepository = require('../../src/infrastructure/peca.repository');
+const PecaRepository = require('../../src/infrastructure/repositories/peca.repository');
 
 describe('Peca Functional Tests (Mocked)', () => {
   let token;

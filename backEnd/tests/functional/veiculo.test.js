@@ -6,9 +6,9 @@ const app = require('../../src/server');
 process.env.JWT_SECRET = 'test_secret';
 
 // Mock do repositório
-jest.mock('../../src/infrastructure/veiculo.repository');
+jest.mock('../../src/infrastructure/repositories/veiculo.repository');
 
-const VeiculoRepository = require('../../src/infrastructure/veiculo.repository');
+const VeiculoRepository = require('../../src/infrastructure/repositories/veiculo.repository');
 
 describe('Veiculo Functional Tests (Mocked)', () => {
   let token;

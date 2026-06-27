@@ -1,12 +1,12 @@
 // 🔥 Mocks PRIMEIRO (ANTES de qualquer import do app)
-jest.mock('../../src/infrastructure/cliente.repository');
+jest.mock('../../src/infrastructure/repositories/cliente.repository');
 jest.mock('../../src/infrastructure/utils/cpf-validator');
 
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const app = require('../../src/server');
 
-const ClienteRepository = require('../../src/infrastructure/cliente.repository');
+const ClienteRepository = require('../../src/infrastructure/repositories/cliente.repository');
 const ValidarDocumento = require('../../src/infrastructure/utils/cpf-validator');
 
 describe('Cliente Functional Tests (Mocked)', () => {

@@ -2,9 +2,9 @@ const request = require('supertest');
 const app = require('../../src/server');
 
 // Mock dos repositórios e serviços
-jest.mock('../../src/infrastructure/servico.repository');
+jest.mock('../../src/infrastructure/repositories/servico.repository');
 
-const ServicoRepository = require('../../src/infrastructure/servico.repository');
+const ServicoRepository = require('../../src/infrastructure/repositories/servico.repository');
 
 describe('Servico Functional Tests (Mocked)', () => {
   let token;
