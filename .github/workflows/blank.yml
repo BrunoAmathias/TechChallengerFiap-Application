@@ -1,0 +1,79 @@
+name: CI/CD - Oficina API
+
+on:
+  push:
+    branches: [ "master" ]
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v3
+
+      # ✅ Node
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Instalar dependências
+        run: npm install
+
+      # ✅ TESTES
+      - name: Rodar testes unitários
+        run: npm run test:unit
+
+      - name: Rodar testes integração
+        run: npm run test:integration
+
+      # ✅ BUILD APP
+      - name: Build da aplicação
+        run: npm run build || echo "sem build"
+
+      # ✅ DOCKER LOGIN
+      - name: Login Docker Hub
+        run: |
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login \
+          -u "${{ secrets.DOCKER_USER }}" --password-stdin
+
+      # ✅ BUILD IMAGE
+      - name: Build Docker
+        run: |
+          docker build -t ${{ secrets.DOCKER_USER }}/backend-api:latest .
+
+      # ✅ PUSH IMAGE
+      - name: Push Docker
+        run: |
+          docker push ${{ secrets.DOCKER_USER }}/backend-api:latest
+
+      # ✅ KUBECTL
+      - name: Instalar kubectl
+        uses: azure/setup-kubectl@v3
+
+      # ✅ CONFIG KUBE
+      - name: Configurar kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
+
+      # ✅ DEPLOY BANCO
+      - name: Deploy PostgreSQL
+        run: kubectl apply -f k8s/postgres.yaml
+
+      # ✅ DEPLOY API
+      - name: Deploy API
+        run: kubectl apply -f k8s/api.yaml
+
+      # ✅ SERVICE
+      - name: Deploy Service
+        run: kubectl apply -f k8s/service.yaml
+
+      # ✅ HPA
+      - name: Deploy HPA
+        run: kubectl apply -f k8s/hpa.yaml
+
+      # ✅ FORÇA RESTART (IMPORTANTE)
+      - name: Restart Deployment
+        run: kubectl rollout restart deployment/oficina-api
