@@ -103,20 +103,30 @@ jobs:
 
       - name: Build Docker
         run: |
-          docker build -t ${{ secrets.DOCKER_USER }}/backend-api:latest ./backEnd
+          docker build -t bruno0games/backend-api:latest ./backEnd
 
       - name: Push Docker
         run: |
-          docker push ${{ secrets.DOCKER_USER }}/backend-api:latest
+          docker push bruno0games/backend-api:latest
+
+      - name: Atualizar imagem no manifesto Kubernetes
+        run: |
+          sed -i "s|image: backend-api:latest|image: bruno0games/backend-api:latest|g" backEnd/k8s/api-deployment.yaml
+          sed -i "s|image: .*backend-api:latest|image: bruno0games/backend-api:latest|g" backEnd/k8s/api-deployment.yaml
 
       - name: Instalar kubectl
         uses: azure/setup-kubectl@v3
 
-      - name: Configurar kubeconfig
-        run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
+      - name: Criar cluster Kubernetes com kind
+        uses: helm/kind-action@v1
 
-
-      - name: Aplicar manifestos Kubernetes
+      - name: Aplicar manifestos YAML no cluster
         run: kubectl apply -f backEnd/k8s/
+
+      - name: Verificar recursos Kubernetes
+        run: |
+          kubectl get nodes
+          kubectl get deployments
+          kubectl get pods
+          kubectl get svc
+          kubectl get hpa
