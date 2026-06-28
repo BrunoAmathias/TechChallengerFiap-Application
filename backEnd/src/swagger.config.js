@@ -116,14 +116,7 @@ const options = {
       },
     ],
   },
-  apis: [
-    './src/interfaces/auth.routes.js',
-    './src/interfaces/cliente.routes.js',
-    './src/interfaces/veiculo.routes.js',
-    './src/interfaces/servico.routes.js',
-    './src/interfaces/peca.routes.js',
-    './src/interfaces/ordemServico.routes.js',
-  ],
+  apis: ['./src/interfaces/routes/*.js'],
 };
 
 const specs = swaggerJSDoc(options);
