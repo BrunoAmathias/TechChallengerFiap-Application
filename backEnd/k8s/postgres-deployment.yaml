@@ -18,31 +18,42 @@ spec:
 
     spec:
       containers:
-      - name: postgres
+        - name: postgres
+          image: postgres:15
 
-        image: postgres:15
+          ports:
+            - containerPort: 5432
 
-        ports:
-        - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: oficina
 
-        env:
-        - name: POSTGRES_DB
-          value: oficina
+            - name: POSTGRES_USER
+              value: postgres
 
-        - name: POSTGRES_USER
-          value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: api-secret
+                  key: DB_PASSWORD
 
-        - name: POSTGRES_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: api-secret
-              key: DB_PASSWORD
+          volumeMounts:
+            # Dados do banco
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
 
-        volumeMounts:
-        - mountPath: /var/lib/postgresql/data
-          name: postgres-storage
+            # Scripts SQL de inicialização
+            - name: postgres-init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
 
       volumes:
-      - name: postgres-storage
-        persistentVolumeClaim:
-          claimName: postgres-pvc
+        # PVC
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+
+        # ConfigMap com os SQLs
+        - name: postgres-init
+          configMap:
+            name: postgres-init

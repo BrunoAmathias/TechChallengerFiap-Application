@@ -29,3 +29,20 @@ spec:
       target:
         type: Utilization
         averageUtilization: 80
+
+  behavior:
+    scaleUp:
+      # Escala imediatamente quando detectar necessidade
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+
+    scaleDown:
+      # Aguarda 30 segundos antes de remover pods
+      stabilizationWindowSeconds: 30
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 30

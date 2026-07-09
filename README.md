@@ -251,12 +251,15 @@ Essa separação garante que as regras de negócio (como formato de placa ou CPF
 - `DELETE /pecas/:id` — Remove peça
 
 ### Ordens de Serviço
-- `POST /ordens-servico` — Abre nova ordem (recebe cliente, veículo, serviços e peças; retorna ID único)
-- `GET /ordens-servico` — Lista ordens ordenadas por status (Em Execução > Aguardando Aprovação > Diagnóstico > Recebida), excluindo Finalizadas e Entregues
-- `GET /ordens-servico/:id` — Consulta status atual da OS
-- `PATCH /ordens-servico/:id/status` — Atualiza status da OS
-- `POST /ordens-servico/:id/aprovacao` — Recebe notificação externa de aprovação ou recusa do orçamento
-- `DELETE /ordens-servico/:id` — Remove ordem (exclusão lógica)
+- `POST /os` — Abre nova ordem (recebe cliente, veículo, serviços e peças; retorna o identificador da OS)
+- `GET /os` — Lista ordens ordenadas por status (Em Execução > Aguardando Aprovação > Em diagnóstico > Recebida), excluindo Finalizadas e Entregues
+- `GET /os/:id` — Consulta a OS por ID
+- `GET /os/consulta/:id` — Consulta pública do status atual da OS
+- `GET /os/cliente/:documento` — Lista ordens por cliente
+- `PATCH /os/:id/status` — Atualiza status da OS
+- `PATCH /os/:id/approve` — Recebe aprovação ou recusa do orçamento
+- `PATCH /os/:id/advance` — Avança a OS para o próximo status
+- `GET /os/:id/servicos-finalizados` — Lista os serviços finalizados da OS
 
 ### Saúde
 - `GET /health` — Endpoint de health check para liveness/readiness probes do Kubernetes
