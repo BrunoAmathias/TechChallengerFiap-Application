@@ -13,3 +13,8 @@ api-secret.yaml
 *.tfstate
 *.tfstate.*
 crash.log
+
+
+# Sonar
+sonar-report.json
+sonar-project.properties
