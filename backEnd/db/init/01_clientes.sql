@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS clientes (
     telefone VARCHAR(20),
     tipo_documento VARCHAR(10) NOT NULL,
     documento VARCHAR(20) NOT NULL UNIQUE,
+    status BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
