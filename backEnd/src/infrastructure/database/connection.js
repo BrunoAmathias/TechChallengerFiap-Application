@@ -1,11 +1,19 @@
 const {Pool} = require('pg')
 
 const pool = new Pool({
-    user: process.env.DB_USER,
-    host: process.env.DB_HOST,
-    database: process.env.DB_NAME,   // ← linha que estava faltando
-    password: process.env.DB_PASSWORD,
-    port: Number(process.env.DB_PORT),      
+    connectionString: process.env.DB_URL,
+    ssl: {
+        rejectUnauthorized: false
+    }
 });
+
+pool.query('SELECT NOW()')
+    .then(result => {
+        console.log('✅ PostgreSQL conectado!');
+        console.log('Horário do banco:', result.rows[0]);
+    })
+    .catch(error => {
+        console.error('❌ Erro ao conectar ao PostgreSQL:', error);
+    });
 
 module.exports = pool;

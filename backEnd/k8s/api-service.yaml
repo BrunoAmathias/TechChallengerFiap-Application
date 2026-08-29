@@ -4,7 +4,7 @@ metadata:
   name: api-service
 
 spec:
-  type: LoadBalancer
+  type: NodePort
 
   selector:
     app: oficina-api
@@ -14,3 +14,4 @@ spec:
       protocol: TCP
       port: 3000
       targetPort: 3000
+      nodePort: 30643

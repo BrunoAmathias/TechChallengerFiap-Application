@@ -1,0 +1,69 @@
+name: CD - Deploy Aplicação (main)
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  EKS_CLUSTER_NAME: techchallenge-dev
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Configurar credenciais AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login no ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build e push da imagem
+        id: build-image
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $REGISTRY/$ECR_REPOSITORY:latest ./backEnd
+          docker push $REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $REGISTRY/$ECR_REPOSITORY:latest
+          echo "image=$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Configurar kubectl para o cluster EKS
+        run: aws eks update-kubeconfig --name $EKS_CLUSTER_NAME --region $AWS_REGION
+
+      - name: Aplicar ConfigMap
+        run: kubectl apply -f backEnd/k8s/api-configmap.yaml
+
+      - name: Criar/atualizar Secret a partir dos secrets do GitHub
+        run: |
+          kubectl create secret generic api-secret \
+            --from-literal=DB_PASSWORD='${{ secrets.DB_PASSWORD }}' \
+            --from-literal=JWT_SECRET='${{ secrets.JWT_SECRET }}' \
+            --from-literal=MOCK_USER_EMAIL='${{ secrets.MOCK_USER_EMAIL }}' \
+            --from-literal=MOCK_USER_PASSWORD='${{ secrets.MOCK_USER_PASSWORD }}' \
+            --from-literal=MOCK_USER_ID='${{ secrets.MOCK_USER_ID }}' \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Aplicar Deployment, Service e HPA
+        run: |
+          kubectl apply -f backEnd/k8s/api-deployment.yaml
+          kubectl apply -f backEnd/k8s/api-service.yaml
+          kubectl apply -f backEnd/k8s/api-hpa.yaml
+
+      - name: Atualizar a imagem no Deployment
+        run: kubectl set image deployment/oficina-api api=${{ steps.build-image.outputs.image }}
+
+      - name: Aguardar rollout concluir
+        run: kubectl rollout status deployment/oficina-api --timeout=180s

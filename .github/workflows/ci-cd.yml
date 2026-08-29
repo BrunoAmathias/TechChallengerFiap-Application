@@ -1,11 +1,11 @@
-name: CI/CD - Oficina API
+name: CI - Validação Oficina API
 
 on:
-  push:
-    branches: [ "master", "main" ]
+  pull_request:
+    branches: [ "Dev", "Homolog", "main" ]
 
 jobs:
-  pipeline:
+  validate:
     runs-on: ubuntu-latest
 
     services:
@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout código
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -82,7 +82,7 @@ jobs:
         env:
           PGPASSWORD: postgres
 
-      - name: Inicializar banco de dados
+      - name: Inicializar banco de dados (apenas para os testes desta pipeline)
         working-directory: ./backEnd
         run: |
           for file in db/init/*.sql; do
@@ -92,41 +92,6 @@ jobs:
         env:
           PGPASSWORD: postgres
 
-      - name: Rodar testes integração
+      - name: Rodar testes de integração
         run: npm run test:integration
         working-directory: ./backEnd
-
-      - name: Login Docker Hub
-        run: |
-          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login \
-          -u "${{ secrets.DOCKER_USER }}" --password-stdin
-
-      - name: Build Docker
-        run: |
-          docker build -t bruno0games/backend-api:latest ./backEnd
-
-      - name: Push Docker
-        run: |
-          docker push bruno0games/backend-api:latest
-
-      - name: Atualizar imagem no manifesto Kubernetes
-        run: |
-          sed -i "s|image: backend-api:latest|image: bruno0games/backend-api:latest|g" backEnd/k8s/api-deployment.yaml
-          sed -i "s|image: .*backend-api:latest|image: bruno0games/backend-api:latest|g" backEnd/k8s/api-deployment.yaml
-
-      - name: Instalar kubectl
-        uses: azure/setup-kubectl@v3
-
-      - name: Criar cluster Kubernetes com kind
-        uses: helm/kind-action@v1
-
-      - name: Aplicar manifestos YAML no cluster
-        run: kubectl apply -f backEnd/k8s/
-
-      - name: Verificar recursos Kubernetes
-        run: |
-          kubectl get nodes
-          kubectl get deployments
-          kubectl get pods
-          kubectl get svc
-          kubectl get hpa
