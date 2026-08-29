@@ -11,7 +11,7 @@ spec:
     name: oficina-api
 
   minReplicas: 2
-  maxReplicas: 10
+  maxReplicas: 3
 
   metrics:
   # Escala por CPU
