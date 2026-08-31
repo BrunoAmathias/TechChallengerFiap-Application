@@ -61,6 +61,7 @@ jobs:
           kubectl apply -f backEnd/k8s/api-deployment.yaml
           kubectl apply -f backEnd/k8s/api-service.yaml
           kubectl apply -f backEnd/k8s/api-hpa.yaml
+          kubectl apply -f backEnd/k8s/ingress.yaml
 
       - name: Atualizar a imagem no Deployment
         run: kubectl set image deployment/oficina-api api=${{ steps.build-image.outputs.image }}
