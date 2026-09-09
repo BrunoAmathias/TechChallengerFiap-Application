@@ -1,7 +1,30 @@
 const newrelic = require('newrelic');
 const OrdemServico = require("../domain/ordemServico");
 const StatusTransition = require("../domain/statusTransition");
-const NotificationService = require("./notification.service")
+const NotificationService = require("./notification.service");
+
+function calcularDuracaoStatusMinutos(updatedAt) {
+  if (!updatedAt) return 0;
+
+  const inicio = new Date(updatedAt);
+
+  if (Number.isNaN(inicio.getTime())) return 0;
+
+  return Math.max(0, (Date.now() - inicio.getTime()) / 60000);
+}
+
+function registrarMudancaStatus(ordemAtual, ordemAtualizada, novoStatus) {
+  newrelic.recordCustomEvent("StatusOS", {
+    ordemId: String(ordemAtualizada?.id ?? ordemAtual?.id ?? ""),
+    statusAnterior: String(ordemAtual?.status ?? "Desconhecido"),
+    novoStatus: String(
+      ordemAtualizada?.status ?? novoStatus ?? "Desconhecido"
+    ),
+    duracaoStatusMinutos: calcularDuracaoStatusMinutos(
+      ordemAtual?.updated_at
+    )
+  });
+}
 
 class CriarOrdemServico {
   constructor(
@@ -124,26 +147,26 @@ class CriarOrdemServico {
       pecasItems.reduce((total, item) => total + item.total, 0);
 
     const ordem = new OrdemServico({
-  cliente_id: clienteExistente.id,
-  veiculo_id: veiculoExistente.id,
-  servicos: servicosItems,
-  pecas: pecasItems,
-  valor_total,
-});
+      cliente_id: clienteExistente.id,
+      veiculo_id: veiculoExistente.id,
+      servicos: servicosItems,
+      pecas: pecasItems,
+      valor_total,
+    });
 
-const ordemCriada = await this.ordemServicoRepository.criar(
-  ordem,
-  servicosItems,
-  pecasItems
-);
+    const ordemCriada = await this.ordemServicoRepository.criar(
+      ordem,
+      servicosItems,
+      pecasItems
+    );
 
-newrelic.recordCustomEvent("OrdemServico", {
-  ordemId: ordemCriada.id,
-  status: ordemCriada.status,
-  valorTotal: ordemCriada.valor_total
-});
+    newrelic.recordCustomEvent("OrdemServico", {
+      ordemId: String(ordemCriada.id),
+      status: String(ordemCriada.status ?? "Recebida"),
+      valorTotal: Number(ordemCriada.valor_total ?? valor_total)
+    });
 
-return ordemCriada;
+    return ordemCriada;
   }
 }
 
@@ -196,7 +219,22 @@ class AtualizarStatusOrdemServico {
       throw new Error("Status é obrigatório");
     }
 
-    return await this.ordemServicoRepository.atualizarStatus(id, status);
+    const ordemAtual = await this.ordemServicoRepository.buscarPorId(id);
+
+    if (!ordemAtual) {
+      throw new Error(`Ordem de serviço não encontrada: id ${id}`);
+    }
+
+    const ordemAtualizada =
+      await this.ordemServicoRepository.atualizarStatus(id, status);
+
+    registrarMudancaStatus(
+      ordemAtual,
+      ordemAtualizada,
+      status
+    );
+
+    return ordemAtualizada;
   }
 }
 
@@ -214,7 +252,17 @@ class AprovarOrdemServico {
 
     if (cliente && aprovado) {
       // Enviar notificação de email (mock)
-      await NotificationService.enviarEmailAprovacao(ordemAprovada, cliente);
+      try {
+        await NotificationService.enviarEmailAprovacao(ordemAprovada, cliente);
+      } catch (error) {
+        newrelic.recordCustomEvent("FalhaIntegracao", {
+          ordemId: String(id),
+          sistema: "Email",
+          mensagem: String(error.message)
+        });
+
+        console.error(`Erro ao enviar email de aprovação: ${error.message}`);
+      }
     }
 
     return ordemAprovada;
@@ -228,13 +276,14 @@ class AvancarStatusOrdemServico {
   }
 
   async execute(id) {
-
     const date_time = new Date().toISOString();
+
     // Busca a ordem de serviço atual através do repositório
     const ordemAtual = await this.ordemServicoRepository.buscarPorId(id);
     if (!ordemAtual) {
       throw new Error(`Ordem de serviço não encontrada: id ${id}`);
     }
+
     // Busca o cliente atual através do repositório
     const cliente = await this.clienteRepository.buscarPorId(ordemAtual.cliente_id);
 
@@ -245,57 +294,101 @@ class AvancarStatusOrdemServico {
     // Obtém o próximo status através da máquina de estados
     const novoStatus = StatusTransition.getNextStatus(ordemAtual.status);
 
-        newrelic.recordCustomEvent("StatusOS", {
-      ordemId: id,
-      statusAnterior: ordemAtual.status,
-      novoStatus
-    });
-
     // Aprovação automática ao passar de "Aguardando aprovação" para "Em execução"
     if (ordemAtual.status === 'Aguardando aprovação' && novoStatus === 'Em execução') {
-      const ordemAtualizada = await this.ordemServicoRepository.atualizarStatus(id, novoStatus, true) ;
+      const ordemAtualizada =
+        await this.ordemServicoRepository.atualizarStatus(
+          id,
+          novoStatus,
+          true
+        );
+
+      registrarMudancaStatus(
+        ordemAtual,
+        ordemAtualizada,
+        novoStatus
+      );
 
       try {
         await NotificationService.enviarEmailAprovacao(ordemAtualizada, cliente);
       } catch (error) {
+        newrelic.recordCustomEvent("FalhaIntegracao", {
+          ordemId: String(id),
+          sistema: "Email",
+          mensagem: String(error.message)
+        });
 
-  newrelic.recordCustomEvent("FalhaIntegracao", {
-    sistema: "Email",
-    mensagem: error.message
-  });
-
-  console.error(`Erro ao enviar email de aprovação: ${error.message}`);
-}
+        console.error(`Erro ao enviar email de aprovação: ${error.message}`);
+      }
 
       // Quando OS muda para "Em execução", iniciar todos os serviços
       try {
-        await this.ordemServicoRepository.atualizarStatusOsServico(novoStatus, date_time, id);
+        await this.ordemServicoRepository.atualizarStatusOsServico(
+          novoStatus,
+          date_time,
+          id
+        );
       } catch (error) {
+        newrelic.recordCustomEvent("FalhaProcessamentoOS", {
+          ordemId: String(id),
+          operacao: "IniciarServicos",
+          status: String(novoStatus),
+          mensagem: String(error.message)
+        });
+
         console.error(`Erro ao iniciar serviços da OS ${id}: ${error.message}`);
       }
+
       return ordemAtualizada;
     }
 
     // Quando OS muda para "Finalizada", finalizar todos os serviços
     if (ordemAtual.status === 'Em execução' && novoStatus === 'Finalizada') {
-      const ordemAtualizada = await this.ordemServicoRepository.atualizarStatus(id, novoStatus);
+      const ordemAtualizada =
+        await this.ordemServicoRepository.atualizarStatus(
+          id,
+          novoStatus
+        );
+
+      registrarMudancaStatus(
+        ordemAtual,
+        ordemAtualizada,
+        novoStatus
+      );
 
       try {
-        await this.ordemServicoRepository.finalizarServicosOs(id, date_time, novoStatus);
+        await this.ordemServicoRepository.finalizarServicosOs(
+          id,
+          date_time,
+          novoStatus
+        );
       } catch (error) {
+        newrelic.recordCustomEvent("FalhaIntegracao", {
+          ordemId: String(id),
+          sistema: "OrdemServico",
+          mensagem: String(error.message)
+        });
 
-  newrelic.recordCustomEvent("FalhaIntegracao", {
-    sistema: "OrdemServico",
-    mensagem: error.message
-  });
+        console.error(`Erro ao finalizar serviços da OS ${id}: ${error.message}`);
+      }
 
-  console.error(`Erro ao finalizar serviços da OS ${id}: ${error.message}`);
-}
       return ordemAtualizada;
     }
 
     // Atualiza o status através do repositório (sem alterar aprovação)
-    return await this.ordemServicoRepository.atualizarStatus(id, novoStatus);
+    const ordemAtualizada =
+      await this.ordemServicoRepository.atualizarStatus(
+        id,
+        novoStatus
+      );
+
+    registrarMudancaStatus(
+      ordemAtual,
+      ordemAtualizada,
+      novoStatus
+    );
+
+    return ordemAtualizada;
   }
 }
 
@@ -303,6 +396,8 @@ class BuscarServicosFinalizadosComTempoMedio {
   constructor(ordemServicoRepository) {
     this.ordemServicoRepository = ordemServicoRepository;
   }
+
+  
 
   async execute(id) {
     const servicos = await this.ordemServicoRepository.buscarServicosFinalizadosComTempoMedio(id);
