@@ -163,7 +163,7 @@ jobs:
             -o yaml |
           kubectl apply -f -
 
-      - name: Validar Secret criado no Kubernetes
+            - name: Validar Secret criado no Kubernetes
         run: |
           SECRET_KEY="$(kubectl get secret api-secret \
             -o jsonpath='{.data.NEW_RELIC_LICENSE_KEY}')"
@@ -174,7 +174,12 @@ jobs:
           fi
 
           SECRET_COUNT="$(kubectl get secret api-secret \
-            -o jsonpath='{len(.data)}')"
+            -o go-template='{{len .data}}')"
+
+          if [ "$SECRET_COUNT" -ne 6 ]; then
+            echo "Quantidade inesperada de chaves no api-secret: $SECRET_COUNT"
+            exit 1
+          fi
 
           echo "api-secret criado com $SECRET_COUNT chaves."
           echo "NEW_RELIC_LICENSE_KEY encontrada no Secret."
