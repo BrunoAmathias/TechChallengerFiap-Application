@@ -1,3 +1,4 @@
+const newrelic = require('newrelic');
 const OrdemServico = require("../domain/ordemServico");
 const StatusTransition = require("../domain/statusTransition");
 const NotificationService = require("./notification.service")
@@ -123,14 +124,26 @@ class CriarOrdemServico {
       pecasItems.reduce((total, item) => total + item.total, 0);
 
     const ordem = new OrdemServico({
-      cliente_id: clienteExistente.id,
-      veiculo_id: veiculoExistente.id,
-      servicos: servicosItems,
-      pecas: pecasItems,
-      valor_total,
-    });
+  cliente_id: clienteExistente.id,
+  veiculo_id: veiculoExistente.id,
+  servicos: servicosItems,
+  pecas: pecasItems,
+  valor_total,
+});
 
-    return await this.ordemServicoRepository.criar(ordem, servicosItems, pecasItems);
+const ordemCriada = await this.ordemServicoRepository.criar(
+  ordem,
+  servicosItems,
+  pecasItems
+);
+
+newrelic.recordCustomEvent("OrdemServico", {
+  ordemId: ordemCriada.id,
+  status: ordemCriada.status,
+  valorTotal: ordemCriada.valor_total
+});
+
+return ordemCriada;
   }
 }
 
@@ -232,6 +245,12 @@ class AvancarStatusOrdemServico {
     // Obtém o próximo status através da máquina de estados
     const novoStatus = StatusTransition.getNextStatus(ordemAtual.status);
 
+        newrelic.recordCustomEvent("StatusOS", {
+      ordemId: id,
+      statusAnterior: ordemAtual.status,
+      novoStatus
+    });
+
     // Aprovação automática ao passar de "Aguardando aprovação" para "Em execução"
     if (ordemAtual.status === 'Aguardando aprovação' && novoStatus === 'Em execução') {
       const ordemAtualizada = await this.ordemServicoRepository.atualizarStatus(id, novoStatus, true) ;
@@ -239,8 +258,14 @@ class AvancarStatusOrdemServico {
       try {
         await NotificationService.enviarEmailAprovacao(ordemAtualizada, cliente);
       } catch (error) {
-        console.error(`Erro ao enviar email de aprovação: ${error.message}`);
-      }
+
+  newrelic.recordCustomEvent("FalhaIntegracao", {
+    sistema: "Email",
+    mensagem: error.message
+  });
+
+  console.error(`Erro ao enviar email de aprovação: ${error.message}`);
+}
 
       // Quando OS muda para "Em execução", iniciar todos os serviços
       try {
@@ -258,8 +283,14 @@ class AvancarStatusOrdemServico {
       try {
         await this.ordemServicoRepository.finalizarServicosOs(id, date_time, novoStatus);
       } catch (error) {
-        console.error(`Erro ao finalizar serviços da OS ${id}: ${error.message}`);
-      }
+
+  newrelic.recordCustomEvent("FalhaIntegracao", {
+    sistema: "OrdemServico",
+    mensagem: error.message
+  });
+
+  console.error(`Erro ao finalizar serviços da OS ${id}: ${error.message}`);
+}
       return ordemAtualizada;
     }
 
