@@ -38,6 +38,7 @@ jobs:
       - name: Validar acesso à AWS
         run: |
           aws sts get-caller-identity
+
           aws eks describe-cluster \
             --name "$EKS_CLUSTER_NAME" \
             --region "$AWS_REGION" \
@@ -160,18 +161,30 @@ jobs:
             --from-literal=MOCK_USER_ID="$MOCK_USER_ID" \
             --from-literal=NEW_RELIC_LICENSE_KEY="$NEW_RELIC_LICENSE_KEY" \
             --dry-run=client \
-            -o yaml |
-          kubectl apply -f -
+            -o yaml | kubectl apply -f -
 
-            - name: Validar Secret criado no Kubernetes
+      - name: Validar Secret criado no Kubernetes
         run: |
-          SECRET_KEY="$(kubectl get secret api-secret \
-            -o jsonpath='{.data.NEW_RELIC_LICENSE_KEY}')"
+          REQUIRED_KEYS=(
+            "DB_PASSWORD"
+            "JWT_SECRET"
+            "MOCK_USER_EMAIL"
+            "MOCK_USER_PASSWORD"
+            "MOCK_USER_ID"
+            "NEW_RELIC_LICENSE_KEY"
+          )
 
-          if [ -z "$SECRET_KEY" ]; then
-            echo "NEW_RELIC_LICENSE_KEY não foi encontrada no api-secret"
-            exit 1
-          fi
+          for KEY in "${REQUIRED_KEYS[@]}"; do
+            VALUE="$(kubectl get secret api-secret \
+              -o "jsonpath={.data.${KEY}}")"
+
+            if [ -z "$VALUE" ]; then
+              echo "Chave ausente no api-secret: $KEY"
+              exit 1
+            fi
+
+            echo "Chave encontrada: $KEY"
+          done
 
           SECRET_COUNT="$(kubectl get secret api-secret \
             -o go-template='{{len .data}}')"
@@ -181,8 +194,7 @@ jobs:
             exit 1
           fi
 
-          echo "api-secret criado com $SECRET_COUNT chaves."
-          echo "NEW_RELIC_LICENSE_KEY encontrada no Secret."
+          echo "api-secret validado com $SECRET_COUNT chaves."
 
       - name: Aplicar Deployment, Service, HPA e Ingress
         run: |
@@ -234,3 +246,23 @@ jobs:
 
           echo "===== Descrição dos pods ====="
           kubectl describe pods -l app=oficina-api || true
+
+          echo "===== Logs atuais ====="
+          kubectl logs \
+            -l app=oficina-api \
+            --all-containers=true \
+            --tail=100 \
+            --prefix=true || true
+
+          echo "===== Logs anteriores ====="
+          kubectl logs \
+            -l app=oficina-api \
+            --all-containers=true \
+            --previous \
+            --tail=100 \
+            --prefix=true || true
+
+          echo "===== Eventos recentes ====="
+          kubectl get events \
+            --sort-by=.metadata.creationTimestamp \
+            | tail -100 || true
