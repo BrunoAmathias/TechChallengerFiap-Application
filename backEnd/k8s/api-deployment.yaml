@@ -59,6 +59,22 @@ spec:
                   name: api-secret
                   key: MOCK_USER_ID
 
+                  env:
+        - name: NEW_RELIC_LICENSE_KEY
+          value: "SUA_LICENSE_KEY"
+
+        - name: NEW_RELIC_APP_NAME
+          value: "oficina-api"
+
+        - name: NEW_RELIC_DISTRIBUTED_TRACING_ENABLED
+          value: "true"
+
+        - name: NEW_RELIC_LOG
+          value: "stdout"
+
+        - name: NEW_RELIC_NO_CONFIG_FILE
+          value: "true"
+
           resources:
             requests:
               cpu: "100m"
