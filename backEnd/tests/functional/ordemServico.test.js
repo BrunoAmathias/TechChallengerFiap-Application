@@ -329,31 +329,47 @@ const ordemData = {
   });
 
   describe('PATCH /os/:id/status', () => {
-    it('should update ordem status successfully', async () => {
-      const updateData = {
-        status: 'APROVADA'
-      };
+  it('should update ordem status successfully', async () => {
+    const updateData = {
+      status: 'APROVADA'
+    };
 
-      const mockUpdatedOrdem = {
-        id: 1,
-        status: 'APROVADA'
-      };
+    const mockOrdemAtual = {
+      id: 1,
+      cliente_id: 1,
+      veiculo_id: 1,
+      status: 'AGUARDANDO_APROVACAO',
+      aprovado: false,
+      valor_total: 250,
+      updated_at: '2026-09-10T12:00:00.000Z'
+    };
 
-      OrdemServicoRepository.atualizarStatus.mockResolvedValue(mockUpdatedOrdem);
+    const mockUpdatedOrdem = {
+      ...mockOrdemAtual,
+      status: 'APROVADA',
+      updated_at: '2026-09-10T12:10:00.000Z'
+    };
 
-      const response = await request(app)
-        .patch('/os/1/status')
-        .set('Authorization', `Bearer ${token}`)
-        .send(updateData);
+    OrdemServicoRepository.buscarPorId.mockResolvedValue(mockOrdemAtual);
+    OrdemServicoRepository.atualizarStatus.mockResolvedValue(mockUpdatedOrdem);
 
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual(mockUpdatedOrdem);
-      expect(OrdemServicoRepository.atualizarStatus).toHaveBeenCalledWith(
-        '1',
-        'APROVADA'
-      );
-    });
+    const response = await request(app)
+      .patch('/os/1/status')
+      .set('Authorization', `Bearer ${token}`)
+      .send(updateData);
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual(mockUpdatedOrdem);
+
+    expect(OrdemServicoRepository.buscarPorId).toHaveBeenCalledWith('1');
+
+    expect(OrdemServicoRepository.atualizarStatus).toHaveBeenCalledWith(
+      '1',
+      'APROVADA'
+    );
   });
+});
+
 
   describe('PATCH /os/:id/approve', () => {
     it('should approve ordem successfully', async () => {
