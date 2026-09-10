@@ -5,9 +5,6 @@ API RESTful para gerenciamento de uma oficina mecânica, desenvolvida como parte
 ---
 
 
-@@@@ TESTE COMMIT 
-
-
 ## 📋 Sumário
 
 - [Descrição da Solução — Fase 2](#-descrição-da-solução--fase-2)
@@ -765,3 +762,56 @@ O banco `oficina` é criado automaticamente pelo Docker através dos scripts em 
 7. `os_pecas` — peças utilizadas em uma ordem
 
 Todas as tabelas possuem campos `created_at` e `updated_at` gerenciados automaticamente por triggers.
+
+---
+
+## 🏛️ Arquitetura Implementada
+
+A aplicação segue a organização em camadas e o fluxo de comunicação abaixo:
+
+```text
+Cliente HTTP
+  ↓
+interfaces/routes
+  ↓
+interfaces/controllers
+  ↓
+application/services
+  ↓
+domain/entities
+  ↓
+infrastructure/repositories
+  ↓
+PostgreSQL
+```
+
+A separação de responsabilidades é a seguinte:
+
+- `domain/`: entidades e regras de negócio;
+- `application/`: serviços com orquestração dos casos de uso;
+- `infrastructure/`: conexão com o banco, repositórios e utilitários;
+- `interfaces/`: rotas, controladores e middlewares HTTP.
+
+Essa arquitetura permite manter regras de negócio independentes da infraestrutura, com persistência e gestão de endpoints isolados por camada.
+
+---
+
+## 🧩 Repositórios Complementares
+
+O ecossistema TechChallengerFiap é composto por repositórios com responsabilidades bem definidas:
+
+| Repositório | Função |
+|---|---|
+| `TechChallengerFiap-Application` | API RESTful em Node.js/Express com endpoints de clientes, veículos, serviços, peças e ordens de serviço. |
+| `TechChallengerFiap-DB` | Infraestrutura de provisionamento do projeto PostgreSQL em Neon via Terraform. |
+| `TechChallengerFiap-K8s` | Infraestrutura de cluster EKS, addons Kubernetes, IAM, Load Balancer Controller e deploy via Helm/Terraform. |
+| `TechChallengerFiap-ServerLess` | Função serverless em JavaScript com validação de CPF, consulta em PostgreSQL e emissão de token JWT. |
+
+O fluxo de dados entre os repositórios segue a separação de responsabilidades:
+
+```text
+TechChallengerFiap-Application -> API principal
+TechChallengerFiap-DB -> banco PostgreSQL gerenciado
+TechChallengerFiap-K8s -> orquestração e exposição da API
+TechChallengerFiap-ServerLess -> função serverless complementar
+```
