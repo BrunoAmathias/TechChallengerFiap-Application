@@ -1,220 +1,139 @@
-# 🔧 TechChallenger FIAP — Fase 2: API de Oficina Mecânica
+# TechChallengerFiap-Application
 
-API RESTful para gerenciamento de uma oficina mecânica, desenvolvida como parte do Tech Challenger da FIAP. O sistema permite controlar clientes, veículos, serviços, peças e ordens de serviço com autenticação via JWT.
+## Propósito
 
----
+Este repositório concentra a API principal do sistema de oficina mecânica. Ele é responsável por gerenciar clientes, veículos, serviços, peças, ordens de serviço, autenticação JWT e documentação OpenAPI/Swagger da aplicação.
 
+## Tecnologias utilizadas
 
-## 📋 Sumário
+- Node.js 18+
+- Express 5
+- PostgreSQL 15
+- JWT (jsonwebtoken)
+- Swagger JSdoc + Swagger UI
+- Jest + Supertest
+- Docker / Docker Compose
+- Kubernetes + Kind
+- Terraform
+- New Relic
 
-- [Descrição da Solução — Fase 2](#-descrição-da-solução--fase-2)
-- [Tecnologias](#-tecnologias)
-- [Arquitetura](#-arquitetura)
-- [Funcionalidades](#-funcionalidades)
-- [Pré-requisitos](#-pré-requisitos)
-- [Execução Local](#-execução-local)
-- [Deploy em Kubernetes](#-deploy-em-kubernetes)
-- [Provisionamento com Terraform](#-provisionamento-com-terraform)
-- [Variáveis de Ambiente](#-variáveis-de-ambiente)
-- [Documentação da API](#-documentação-da-api)
-- [Testes](#-testes)
-- [CI/CD](#-cicd)
-- [Estrutura do Projeto](#-estrutura-do-projeto)
-- [Banco de Dados](#-banco-de-dados)
+## Arquitetura específica do repositório
 
----
-
-## 🎯 Descrição da Solução — Fase 2
-
-### Contexto
-
-Após a implantação do sistema inicial para gestão de ordens de serviço, veículos, clientes e controle de peças, a oficina mecânica conquistou maior eficiência no atendimento. Com o aumento da demanda, a expansão para novas unidades e a necessidade de garantir alta disponibilidade, surgiu a necessidade de evoluir a aplicação.
-
-### Objetivos desta fase
-
-Esta fase tem como foco a evolução da aplicação para garantir **qualidade**, **resiliência** e **escalabilidade**, incorporando práticas modernas de infraestrutura e automação:
-
-- **Reduzir riscos operacionais** por meio de infraestrutura escalável e orquestrada
-- **Automatizar o provisionamento e o deploy** do ambiente com Terraform e CI/CD
-- **Melhorar a qualidade e a organização do código**, aplicando Clean Code e Clean Architecture
-- **Preparar a aplicação para suportar grandes volumes** de ordens de serviço em horários de pico, com escalabilidade dinâmica via HPA
-
-### O que foi evoluído
-
-| Área | O que mudou |
-|---|---|
-| **Arquitetura** | Refatoração completa para Clean Architecture (Domain, Application, Infrastructure, Interfaces) |
-| **APIs** | Novos endpoints de aprovação de orçamento, listagem ordenada e notificação de status |
-| **Testes** | Cobertura expandida — unitários, integração e funcionais |
-| **Containerização** | Dockerfile e docker-compose revisados para produção e testes |
-| **Kubernetes** | Manifestos YAML para Deployment, Service, ConfigMap, Secret e HPA |
-| **IaC** | Scripts Terraform para provisionamento completo do cluster Kind + recursos K8s |
-| **CI/CD** | Pipeline GitHub Actions com build, testes, push de imagem Docker e deploy no cluster |
-
----
-
-## 🛠 Tecnologias
-
-| Tecnologia | Versão | Uso |
-|---|---|---|
-| Node.js | 18 | Runtime |
-| Express | 5 | Framework HTTP |
-| PostgreSQL | 15 | Banco de dados |
-| JSON Web Token | 9 | Autenticação |
-| Swagger (jsdoc + ui) | 6 / 5 | Documentação da API |
-| Jest | 29 | Testes |
-| Supertest | 6 | Testes funcionais |
-| Docker / Docker Compose | — | Containerização |
-| Kubernetes | 1.29+ | Orquestração de containers |
-| Terraform | ≥ 1.5.0 | Infraestrutura como Código |
-| Kind | 0.11.0 | Cluster Kubernetes local |
-| GitHub Actions | — | CI/CD |
-| Nodemon | 3 | Hot reload em desenvolvimento |
-
----
-
-## 🏗 Arquitetura
-
-### Camadas da Aplicação
-
-O projeto segue os princípios da **Clean Architecture**, dividido em quatro camadas com dependências apontando sempre para o centro:
-
-```
-src/
-├── domain/           # Entidades e regras de negócio puras
-├── application/      # Casos de uso (orquestração dos fluxos)
-├── infrastructure/   # Repositórios, banco de dados e utilitários
-└── interfaces/       # Controllers, rotas e middlewares HTTP
+```mermaid
+flowchart LR
+    Client[Cliente / Frontend / Postman] --> API[API Node.js<br/>Express + Routes]
+    API --> APP[Application Layer]
+    APP --> DOMAIN[Domain Layer]
+    APP --> REPO[Infrastructure / Repositories]
+    REPO --> DB[(PostgreSQL)]
+    API --> SWAGGER[Swagger UI /api-docs]
+    API --> K8S[Kubernetes / HPA / Services]
 ```
 
-**Fluxo de uma requisição:**
+A aplicação segue uma organização em camadas com domínio, aplicação, infraestrutura e interfaces HTTP, permitindo regras de negócio independentes do framework e da persistência.
 
-```
-Requisição HTTP
-    → interfaces (rota + controller)
-        → application (caso de uso)
-            → domain (validação de negócio)
-            → infrastructure (persistência)
-```
+## Como executar
 
-Essa separação garante que as regras de negócio (como formato de placa ou CPF válido) vivam no Domain, independentes de qualquer infraestrutura ou framework.
+### 1) Opção recomendada com Docker
 
----
-
-### Infraestrutura Provisionada
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    Cluster Kubernetes (Kind)                     │
-│                                                                 │
-│  ┌──────────────────────────────────────────────────────────┐   │
-│  │                      Namespace: default                  │   │
-│  │                                                          │   │
-│  │   ┌─────────────┐   ┌─────────────┐   ┌─────────────┐   │   │
-│  │   │  oficina-api│   │  oficina-api│   │  oficina-api│   │   │
-│  │   │   Pod #1    │   │   Pod #2    │   │  Pod #N...  │   │   │
-│  │   └──────┬──────┘   └──────┬──────┘   └──────┬──────┘   │   │
-│  │          └─────────────────┴─────────────────┘           │   │
-│  │                            │                             │   │
-│  │              ┌─────────────▼─────────────┐               │   │
-│  │              │    api-service (LB :3000) │               │   │
-│  │              └───────────────────────────┘               │   │
-│  │                                                          │   │
-│  │   ┌──────────────────┐   ┌──────────────────────────┐   │   │
-│  │   │  postgres Pod    │   │  HPA (min:2 / max:10)    │   │   │
-│  │   │  (PostgreSQL 15) │   │  CPU: 70% / Mem: 80%     │   │   │
-│  │   └────────┬─────────┘   └──────────────────────────┘   │   │
-│  │            │                                             │   │
-│  │   ┌────────▼─────────┐   ┌──────────┐  ┌────────────┐   │   │
-│  │   │ postgres-service │   │api-config│  │ api-secret │   │   │
-│  │   │  (ClusterIP:5432)│   │(ConfigMap│  │  (Secret)  │   │   │
-│  │   └──────────────────┘   └──────────┘  └────────────┘   │   │
-│  │                                                          │   │
-│  │   ┌──────────────────┐                                   │   │
-│  │   │   postgres-pvc   │                                   │   │
-│  │   │    (1Gi RWO)     │                                   │   │
-│  │   └──────────────────┘                                   │   │
-│  └──────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────┘
-         │
-         │  kubectl port-forward service/api-service 3000:3000
-         │
-    localhost:3000
+```bash
+cd TechChallengerFiap-Application/backEnd
+docker-compose up --build
 ```
 
-**Recursos Kubernetes provisionados:**
+A API ficará disponível em:
 
-| Recurso | Nome | Descrição |
-|---|---|---|
-| Deployment | `oficina-api` | API Node.js, 2 réplicas iniciais |
-| Deployment | `postgres` | PostgreSQL 15, 1 réplica |
-| Service | `api-service` | LoadBalancer na porta 3000 |
-| Service | `postgres-service` | ClusterIP na porta 5432 |
-| ConfigMap | `api-config` | Variáveis não-sensíveis (DB_HOST, DB_NAME, DB_PORT, DB_USER) |
-| Secret | `api-secret` | Variáveis sensíveis (DB_PASSWORD, JWT_SECRET, credenciais mock) |
-| HPA | `api-hpa` | Escala de 2 a 10 pods por CPU (70%) e memória (80%) |
-| PVC | `postgres-pvc` | Volume persistente de 1Gi para o PostgreSQL |
+- Swagger: http://localhost:3000/api-docs
+- API: http://localhost:3000
+- PostgreSQL: localhost:5433
+- pgAdmin: http://localhost:5050
 
----
+### 2) Execução local sem Docker
 
-### Fluxo de Deploy (CI/CD)
-
+```bash
+cd TechChallengerFiap-Application/backEnd
+npm install
+cp .env.example .env
+npm run dev
 ```
- Push para master/main
-        │
-        ▼
-┌───────────────────┐
-│  1. Checkout      │  actions/checkout@v3
-└────────┬──────────┘
-         ▼
-┌───────────────────┐
-│  2. Setup Node 20 │  actions/setup-node@v4
-└────────┬──────────┘
-         ▼
-┌───────────────────┐
-│  3. npm install   │  Instala dependências
-└────────┬──────────┘
-         ▼
-┌───────────────────┐
-│  4. Testes Unit.  │  npm run test:unit
-└────────┬──────────┘
-         ▼
-┌───────────────────┐
-│  5. Testes Func.  │  npm run test:functional
-└────────┬──────────┘
-         ▼
-┌───────────────────┐
-│  6. Init DB CI    │  Executa scripts db/init/*.sql
-└────────┬──────────┘
-         ▼
-┌───────────────────┐
-│  7. Testes Integ. │  npm run test:integration
-└────────┬──────────┘
-         ▼
-┌───────────────────┐
-│  8. Docker Build  │  docker build -t bruno0games/backend-api:latest
-└────────┬──────────┘
-         ▼
-┌───────────────────┐
-│  9. Docker Push   │  push para Docker Hub
-└────────┬──────────┘
-         ▼
-┌───────────────────┐
-│ 10. Atualiza YAML │  sed substitui imagem no api-deployment.yaml
-└────────┬──────────┘
-         ▼
-┌───────────────────┐
-│ 11. Kind Cluster  │  helm/kind-action@v1 cria cluster local
-└────────┬──────────┘
-         ▼
-┌───────────────────┐
-│ 12. kubectl apply │  Aplica todos os manifestos em k8s/
-└────────┬──────────┘
-         ▼
-┌───────────────────┐
-│ 13. Verifica K8s  │  get nodes, pods, svc, hpa
-└───────────────────┘
+
+Se desejar rodar em produção:
+
+```bash
+npm start
 ```
+
+## Deploy
+
+### Kubernetes
+
+```bash
+cd TechChallengerFiap-Application
+kubectl apply -f backEnd/k8s/
+```
+
+Principais recursos:
+
+- Deployment da API
+- Service LoadBalancer
+- PostgreSQL em um pod separado
+- PVC persistente
+- HPA para escalabilidade
+
+### Terraform
+
+```bash
+cd TechChallengerFiap-Application/backEnd/terraForm
+terraform init
+terraform plan
+terraform apply
+```
+
+## Passos para deploy e execução
+
+1. Preparar o banco PostgreSQL.
+2. Configurar variáveis de ambiente no arquivo `.env`.
+3. Rodar a aplicação localmente ou via Docker Compose.
+4. Validar a API no Swagger.
+5. Aplicar manifestos Kubernetes ou provisionar o ambiente com Terraform.
+6. Verificar health check:
+
+```bash
+curl http://localhost:3000/health
+```
+
+## Link para Swagger / Postman
+
+- Swagger principal da API: http://localhost:3000/api-docs
+- Swagger pode ser usado como documentação interativa dos endpoints.
+- Para uso em Postman, importe a documentação OpenAPI gerada em `/api-docs` e teste os endpoints em JSON.
+
+## Estrutura principal
+
+```text
+TechChallengerFiap-Application/
+├── backEnd/
+│   ├── src/
+│   ├── db/
+│   ├── k8s/
+│   ├── terraForm/
+│   ├── tests/
+│   ├── Dockerfile
+│   ├── docker-compose.yml
+│   └── package.json
+├── README.md
+└── Doc_Arquitetura/
+```
+
+## Funcionalidades principais
+
+- Cadastro e consulta de clientes
+- Cadastro e consulta de veículos
+- Gestão de serviços e peças
+- Criação e acompanhamento de ordens de serviço
+- Aprovação de orçamento e evolução de status
+- Autenticação via JWT
+- Health check para Kubernetes
 
 ---
 
