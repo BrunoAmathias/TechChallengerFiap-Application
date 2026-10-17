@@ -18,21 +18,11 @@ describe('Auth Repository Integration Tests', () => {
     });
 
     it('should fail login with incorrect password', async () => {
-      try {
-        await AuthService.login(testUser.email, 'wrongpassword');
-        fail('Should have thrown an error');
-      } catch (err) {
-        expect(err.message).toBeDefined();
-      }
+      await expect(AuthService.login(testUser.email, 'wrongpassword')).rejects.toThrow('Credenciais inválidas');
     });
 
     it('should fail login with non-existent email', async () => {
-      try {
-        await AuthService.login('nonexistent@test.com', 'anypassword');
-        fail('Should have thrown an error');
-      } catch (err) {
-        expect(err.message).toBeDefined();
-      }
+      await expect(AuthService.login('nonexistent@test.com', 'anypassword')).rejects.toThrow('Credenciais inválidas');
     });
   });
 
@@ -52,21 +42,13 @@ describe('Auth Repository Integration Tests', () => {
     });
 
     it('should fail verification with invalid token', async () => {
-      try {
-        jwt.verify('invalid.token.here', process.env.JWT_SECRET);
-        fail('Should have thrown an error');
-      } catch (err) {
-        expect(err.message).toBeDefined();
-      }
+      expect(() => jwt.verify('invalid.token.here', process.env.JWT_SECRET)).toThrow();
     });
 
     it('should fail verification with expired token', async () => {
-      try {
-        jwt.verify('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1MTYyMzkwMjJ9.invalid', process.env.JWT_SECRET);
-        fail('Should have thrown an error');
-      } catch (err) {
-        expect(err.message).toBeDefined();
-      }
+      expect(() =>
+        jwt.verify('eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJleHAiOjE1MTYyMzkwMjJ9.invalid', process.env.JWT_SECRET)
+      ).toThrow();
     });
   });
 });

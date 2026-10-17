@@ -1,20 +1,27 @@
 # Modules
 node_modules/
 
-#ENV
+# ENV (versione apenas os *.example)
 .env
-.env.test
+.env.*
+!.env.example
+!.env.test.example
 
-#Kubernetes
+# Kubernetes (o Secret é gerado pelo cd.yml a partir dos GitHub Secrets)
 api-secret.yaml
 
 # Terraform
 .terraform/
 *.tfstate
 *.tfstate.*
+*.tfvars
+oficina-cluster-config
 crash.log
 
-
 # Sonar
+.scannerwork/
 sonar-report.json
-sonar-project.properties
+
+# Testes e logs
+coverage/
+*.log

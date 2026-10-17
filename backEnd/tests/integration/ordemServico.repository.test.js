@@ -121,9 +121,23 @@ describe('OrdemServico Repository Integration Tests', () => {
 
   describe('atualizarStatus', () => {
     it('should update ordem status', async () => {
-      const result = await OrdemServicoRepository.atualizarStatus(createdOrdemId, 'APROVADA');
+      const result = await OrdemServicoRepository.atualizarStatus(createdOrdemId, 'Cancelada', undefined, {
+        motivoCancelamento: 'Teste'
+      });
 
-      expect(result.status).toBe('APROVADA');
+      expect(result.status).toBe('Cancelada');
+      expect(result.motivo_cancelamento).toBe('Teste');
+    });
+  });
+
+  describe('liberarEstoque', () => {
+    it('devolve ao estoque as peças da OS', async () => {
+      const antes = (await PecaRepository.buscarPorId(testPecaId)).quantidade;
+
+      const liberadas = await OrdemServicoRepository.liberarEstoque(createdOrdemId);
+
+      expect(liberadas).toEqual([{ peca_id: testPecaId, quantidade: 1 }]);
+      expect((await PecaRepository.buscarPorId(testPecaId)).quantidade).toBe(antes + 1);
     });
   });
 

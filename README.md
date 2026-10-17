@@ -63,6 +63,47 @@ Se desejar rodar em produção:
 npm start
 ```
 
+## CI/CD e qualidade
+
+| Workflow | Quando roda | O que faz |
+|---|---|---|
+| `.github/workflows/ci.yml` | PR para `Dev`, `Homolog` e `main`; push em `Dev` e `Homolog` | `npm ci`, lint, migrations num Postgres de serviço, testes com cobertura, SonarCloud + Quality Gate, `docker build` |
+| `.github/workflows/cd.yml` | push na `main` (merge do PR) ou manual | roda o CI inteiro; build e push da imagem no ECR (`os-service:<sha>`); cria o Secret `api-secret` a partir dos GitHub Secrets; `kubectl kustomize` com a imagem nova; rollout e smoke test do `/health` |
+
+**Qualidade exigida no CI** (o job `ci` falha se qualquer item falhar):
+- ESLint (`npm run lint`);
+- testes unitários, funcionais, BDD e de integração (Postgres de serviço no CI) com **cobertura mínima de 80%** em linhas, branches, funções e statements (`coverageThreshold` do `jest.config.js`);
+- cenários **BDD** em português (`tests/features/*.feature`, jest-cucumber), rodados junto com os demais testes;
+- **SonarCloud** (projeto `BrunoAmathias_TechChallengerFiap`) com `sonar.qualitygate.wait=true`: Quality Gate reprovado falha o job.
+
+```bash
+npm run lint
+npm run test:bdd
+DB_URL=postgresql://... npm run migrate:up && npm run test:coverage   # todos os testes, inclusive integração
+```
+
+### Secrets e variáveis do repositório (GitHub → Settings → Secrets and variables → Actions)
+
+| Nome | Tipo | Uso |
+|---|---|---|
+| `DB_URL`, `JWT_SECRET`, `MOCK_USER_EMAIL`, `MOCK_USER_PASSWORD`, `MOCK_USER_ID`, `NEW_RELIC_LICENSE_KEY` | secret | conteúdo do `api-secret` |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | secret | push no ECR e deploy no EKS |
+| `SONAR_TOKEN` | secret | análise no SonarCloud (sem ele, o CI só avisa e segue) |
+| `ECR_REPOSITORY` | variable (opcional) | padrão `os-service` |
+
+O namespace `os` e os Secrets `rabbitmq` e `service-auth` são criados pelo Terraform do repo `TechChallengerFiap-K8s`; o CD só confere que existem.
+
+### Proteção da branch main
+
+PR obrigatório com 1 aprovação, check `ci` obrigatório (inclui o Quality Gate do Sonar), sem push direto, sem force push. Configuração pela API do GitHub com o script do repo Application:
+
+```bash
+export GH_TOKEN=<token com permissão de administração do repositório>
+./scripts/proteger-branch-main.sh BrunoAmathias/TechChallengerFiap-Application
+```
+
+O check `ci` só aparece para seleção depois da primeira execução do workflow (abra um PR antes).
+
 ## Deploy
 
 ### Kubernetes
@@ -257,16 +298,10 @@ npm install
 
 **2. Configure o banco de dados:**
 
-Crie o banco `oficina` manualmente no PostgreSQL e execute os scripts de inicialização em ordem:
+Crie o banco `oficina` no PostgreSQL e aplique as migrations versionadas (node-pg-migrate):
 
 ```bash
-psql -U postgres -d oficina -f db/init/01_clientes.sql
-psql -U postgres -d oficina -f db/init/02_veiculos.sql
-psql -U postgres -d oficina -f db/init/03_servicos.sql
-psql -U postgres -d oficina -f db/init/04_pecas.sql
-psql -U postgres -d oficina -f db/init/05_ordens_servico.sql
-psql -U postgres -d oficina -f db/init/06_os_servicos.sql
-psql -U postgres -d oficina -f db/init/07_os_pecas.sql
+DB_URL=postgresql://postgres:<senha>@localhost:5432/oficina npm run migrate:up
 ```
 
 **3. Configure o arquivo `.env`** (veja a seção [Variáveis de Ambiente](#-variáveis-de-ambiente))
@@ -670,7 +705,7 @@ TechChallengerFiap/
 
 ## 🗄 Banco de Dados
 
-O banco `oficina` é criado automaticamente pelo Docker através dos scripts em `db/init/`. As tabelas são inicializadas na seguinte ordem:
+O schema é versionado em `backEnd/migrations/` (node-pg-migrate). As migrations rodam no CI, no serviço `migrate` do docker-compose e como `initContainer` no deploy do Kubernetes. As tabelas atuais são:
 
 1. `clientes` — dados dos clientes com CPF/CNPJ único
 2. `veiculos` — veículos com placa única

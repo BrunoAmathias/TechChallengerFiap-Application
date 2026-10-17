@@ -1,29 +1,71 @@
 const newrelic = require('newrelic');
 const OrdemServico = require("../domain/ordemServico");
 const StatusTransition = require("../domain/statusTransition");
-const NotificationService = require("./notification.service");
+const { NaoEncontradoError } = require("../domain/errors");
+const EventTypes = require("./events/eventTypes");
+const { criarEvento } = require("./events/eventFactory");
 
-function calcularDuracaoStatusMinutos(updatedAt) {
-  if (!updatedAt) return 0;
+const { STATUS } = StatusTransition;
 
-  const inicio = new Date(updatedAt);
+function parseDecimal(value, field) {
+  if (value == null) {
+    throw new Error(`${field} inválido`);
+  }
 
-  if (Number.isNaN(inicio.getTime())) return 0;
+  let text = String(value).trim();
+  text = text.replace(/[R$\s]/g, "");
+  if (text.includes(",") && !text.includes(".")) {
+    text = text.replace(",", ".");
+  } else if (text.includes(",") && text.includes(".")) {
+    text = text.replace(/,/g, "");
+  }
 
-  return Math.max(0, (Date.now() - inicio.getTime()) / 60000);
+  const parsed = Number(text);
+  if (Number.isNaN(parsed)) {
+    throw new Error(`${field} inválido`);
+  }
+  return parsed;
 }
 
-function registrarMudancaStatus(ordemAtual, ordemAtualizada, novoStatus) {
-  newrelic.recordCustomEvent("StatusOS", {
-    ordemId: String(ordemAtualizada?.id ?? ordemAtual?.id ?? ""),
-    statusAnterior: String(ordemAtual?.status ?? "Desconhecido"),
-    novoStatus: String(
-      ordemAtualizada?.status ?? novoStatus ?? "Desconhecido"
-    ),
-    duracaoStatusMinutos: calcularDuracaoStatusMinutos(
-      ordemAtual?.updated_at
-    )
-  });
+function montarEventoOsAberta(ordemCriada, cliente, veiculo, servicosItems, pecasItems) {
+  return criarEvento(
+    EventTypes.OS_ABERTA,
+    {
+      osId: ordemCriada.id,
+      valorTotal: Number(ordemCriada.valor_total),
+      cliente: {
+        id: cliente.id,
+        nome: cliente.nome,
+        email: cliente.email,
+        telefone: cliente.telefone ?? null,
+        documento: cliente.documento
+      },
+      veiculo: {
+        id: veiculo.id,
+        placa: veiculo.placa,
+        marca: veiculo.marca,
+        modelo: veiculo.modelo,
+        ano: veiculo.ano
+      },
+      servicos: servicosItems.map((item) => ({
+        servicoId: item.servico_id,
+        nome: item.nome,
+        descricao: item.descricao,
+        quantidade: item.quantidade,
+        valorUnitario: item.valor_unitario,
+        total: item.total
+      })),
+      pecas: pecasItems.map((item) => ({
+        pecaId: item.peca_id,
+        nome: item.nome,
+        descricao: item.descricao,
+        quantidade: item.quantidade,
+        valorUnitario: item.valor_unitario,
+        total: item.total
+      }))
+    },
+    { correlationId: ordemCriada.id }
+  );
 }
 
 class CriarOrdemServico {
@@ -32,13 +74,17 @@ class CriarOrdemServico {
     clienteRepository,
     veiculoRepository,
     servicoRepository,
-    pecaRepository
+    pecaRepository,
+    { historicoRepository, outboxRepository, unitOfWork }
   ) {
     this.ordemServicoRepository = ordemServicoRepository;
     this.clienteRepository = clienteRepository;
     this.veiculoRepository = veiculoRepository;
     this.servicoRepository = servicoRepository;
     this.pecaRepository = pecaRepository;
+    this.historicoRepository = historicoRepository;
+    this.outboxRepository = outboxRepository;
+    this.unitOfWork = unitOfWork;
   }
 
   async execute(data) {
@@ -60,30 +106,8 @@ class CriarOrdemServico {
     // Buscar veículo existente pela placa (sempre usar dados do banco se existir)
     let veiculoExistente = await this.veiculoRepository.buscarPorPlaca(veiculo.placa);
     if (!veiculoExistente) {
-      // Criar novo veículo apenas se não existir
       veiculoExistente = await this.veiculoRepository.criar(veiculo);
     }
-    // Se já existe, usar os dados do banco (não validar consistência)
-
-    const parseDecimal = (value, field) => {
-      if (value == null) {
-        throw new Error(`${field} inválido`);
-      }
-
-      let text = String(value).trim();
-      text = text.replace(/[R$\s]/g, "");
-      if (text.includes(",") && !text.includes(".")) {
-        text = text.replace(",", ".");
-      } else if (text.includes(",") && text.includes(".")) {
-        text = text.replace(/,/g, "");
-      }
-
-      const parsed = Number(text);
-      if (Number.isNaN(parsed)) {
-        throw new Error(`${field} inválido`);
-      }
-      return parsed;
-    };
 
     const servicosItems = await Promise.all(
       servicos.map(async (item) => {
@@ -154,15 +178,26 @@ class CriarOrdemServico {
       valor_total,
     });
 
-    const ordemCriada = await this.ordemServicoRepository.criar(
-      ordem,
-      servicosItems,
-      pecasItems
-    );
+    // OS, reserva de estoque, histórico e evento os.aberta na mesma transação
+    const ordemCriada = await this.unitOfWork.run(async (tx) => {
+      const criada = await this.ordemServicoRepository.criar(ordem, servicosItems, pecasItems, tx);
+
+      await this.historicoRepository.registrar(
+        { osId: criada.id, status: criada.status, origem: "os-service", observacao: "OS aberta" },
+        tx
+      );
+
+      await this.outboxRepository.adicionar(
+        montarEventoOsAberta(criada, clienteExistente, veiculoExistente, servicosItems, pecasItems),
+        tx
+      );
+
+      return criada;
+    });
 
     newrelic.recordCustomEvent("OrdemServico", {
       ordemId: String(ordemCriada.id),
-      status: String(ordemCriada.status ?? "Recebida"),
+      status: String(ordemCriada.status ?? STATUS.RECEBIDA),
       valorTotal: Number(ordemCriada.valor_total ?? valor_total)
     });
 
@@ -188,7 +223,7 @@ class BuscarOrdemServicoPorId {
   async execute(id) {
     const ordem = await this.ordemServicoRepository.buscarPorId(id);
     if (!ordem) {
-      throw new Error("Ordem de serviço não encontrada");
+      throw new NaoEncontradoError("Ordem de serviço não encontrada");
     }
     return ordem;
   }
@@ -203,192 +238,66 @@ class BuscarOrdensPorCliente {
   async execute(documento) {
     const cliente = await this.clienteRepository.buscarPorDocumento(documento);
     if (!cliente) {
-      throw new Error("Cliente não encontrado");
+      throw new NaoEncontradoError("Cliente não encontrado");
     }
     return await this.ordemServicoRepository.buscarPorClienteId(cliente.id);
   }
 }
 
-class AtualizarStatusOrdemServico {
-  constructor(ordemServicoRepository) {
+class BuscarHistoricoOrdemServico {
+  constructor(ordemServicoRepository, historicoRepository) {
     this.ordemServicoRepository = ordemServicoRepository;
-  }
-
-  async execute(id, status) {
-    if (!status) {
-      throw new Error("Status é obrigatório");
-    }
-
-    const ordemAtual = await this.ordemServicoRepository.buscarPorId(id);
-
-    if (!ordemAtual) {
-      throw new Error(`Ordem de serviço não encontrada: id ${id}`);
-    }
-
-    const ordemAtualizada =
-      await this.ordemServicoRepository.atualizarStatus(id, status);
-
-    registrarMudancaStatus(
-      ordemAtual,
-      ordemAtualizada,
-      status
-    );
-
-    return ordemAtualizada;
-  }
-}
-
-class AprovarOrdemServico {
-  constructor(ordemServicoRepository, clienteRepository) {
-    this.ordemServicoRepository = ordemServicoRepository;
-    this.clienteRepository = clienteRepository;
-  }
-
-  async execute(id, aprovado = true) {
-    const ordemAprovada = await this.ordemServicoRepository.aprovar(id, aprovado);
-
-    // Buscar dados do cliente para notificação
-    const cliente = await this.clienteRepository.buscarPorId(ordemAprovada.cliente_id);
-
-    if (cliente && aprovado) {
-      // Enviar notificação de email (mock)
-      try {
-        await NotificationService.enviarEmailAprovacao(ordemAprovada, cliente);
-      } catch (error) {
-        newrelic.recordCustomEvent("FalhaIntegracao", {
-          ordemId: String(id),
-          sistema: "Email",
-          mensagem: String(error.message)
-        });
-
-        console.error(`Erro ao enviar email de aprovação: ${error.message}`);
-      }
-    }
-
-    return ordemAprovada;
-  }
-}
-
-class AvancarStatusOrdemServico {
-  constructor(ordemServicoRepository, clienteRepository) {
-    this.ordemServicoRepository = ordemServicoRepository;
-    this.clienteRepository = clienteRepository;
+    this.historicoRepository = historicoRepository;
   }
 
   async execute(id) {
-    const date_time = new Date().toISOString();
-
-    // Busca a ordem de serviço atual através do repositório
-    const ordemAtual = await this.ordemServicoRepository.buscarPorId(id);
-    if (!ordemAtual) {
-      throw new Error(`Ordem de serviço não encontrada: id ${id}`);
+    const ordem = await this.ordemServicoRepository.buscarPorId(id);
+    if (!ordem) {
+      throw new NaoEncontradoError("Ordem de serviço não encontrada");
     }
 
-    // Busca o cliente atual através do repositório
-    const cliente = await this.clienteRepository.buscarPorId(ordemAtual.cliente_id);
+    const historico = await this.historicoRepository.listarPorOs(id);
+    return { ordem_servico_id: Number(id), status_atual: ordem.status, historico };
+  }
+}
 
-    if (!cliente) {
-      throw new Error(`cliente não encontrado: id ${ordemAtual.cliente_id}`);
+/** Detalhes completos da OS para outros serviços (GET /internal/os/:id). */
+class BuscarOrdemServicoInterna {
+  constructor(ordemServicoRepository, clienteRepository, veiculoRepository) {
+    this.ordemServicoRepository = ordemServicoRepository;
+    this.clienteRepository = clienteRepository;
+    this.veiculoRepository = veiculoRepository;
+  }
+
+  async execute(id) {
+    const ordem = await this.ordemServicoRepository.buscarPorId(id);
+    if (!ordem) {
+      throw new NaoEncontradoError("Ordem de serviço não encontrada");
     }
 
-    // Obtém o próximo status através da máquina de estados
-    const novoStatus = StatusTransition.getNextStatus(ordemAtual.status);
+    const [cliente, veiculo] = await Promise.all([
+      this.clienteRepository.buscarPorId(ordem.cliente_id),
+      this.veiculoRepository.buscarVeiculoPorId(ordem.veiculo_id)
+    ]);
 
-    // Aprovação automática ao passar de "Aguardando aprovação" para "Em execução"
-    if (ordemAtual.status === 'Aguardando aprovação' && novoStatus === 'Em execução') {
-      const ordemAtualizada =
-        await this.ordemServicoRepository.atualizarStatus(
-          id,
-          novoStatus,
-          true
-        );
+    return { ...ordem, cliente, veiculo };
+  }
+}
 
-      registrarMudancaStatus(
-        ordemAtual,
-        ordemAtualizada,
-        novoStatus
-      );
+/** Cliente retira o veículo: Finalizada → Entregue (publica os.entregue). */
+class EntregarOrdemServico {
+  constructor(transicionarStatus) {
+    this.transicionarStatus = transicionarStatus;
+  }
 
-      try {
-        await NotificationService.enviarEmailAprovacao(ordemAtualizada, cliente);
-      } catch (error) {
-        newrelic.recordCustomEvent("FalhaIntegracao", {
-          ordemId: String(id),
-          sistema: "Email",
-          mensagem: String(error.message)
-        });
-
-        console.error(`Erro ao enviar email de aprovação: ${error.message}`);
-      }
-
-      // Quando OS muda para "Em execução", iniciar todos os serviços
-      try {
-        await this.ordemServicoRepository.atualizarStatusOsServico(
-          novoStatus,
-          date_time,
-          id
-        );
-      } catch (error) {
-        newrelic.recordCustomEvent("FalhaProcessamentoOS", {
-          ordemId: String(id),
-          operacao: "IniciarServicos",
-          status: String(novoStatus),
-          mensagem: String(error.message)
-        });
-
-        console.error(`Erro ao iniciar serviços da OS ${id}: ${error.message}`);
-      }
-
-      return ordemAtualizada;
-    }
-
-    // Quando OS muda para "Finalizada", finalizar todos os serviços
-    if (ordemAtual.status === 'Em execução' && novoStatus === 'Finalizada') {
-      const ordemAtualizada =
-        await this.ordemServicoRepository.atualizarStatus(
-          id,
-          novoStatus
-        );
-
-      registrarMudancaStatus(
-        ordemAtual,
-        ordemAtualizada,
-        novoStatus
-      );
-
-      try {
-        await this.ordemServicoRepository.finalizarServicosOs(
-          id,
-          date_time,
-          novoStatus
-        );
-      } catch (error) {
-        newrelic.recordCustomEvent("FalhaIntegracao", {
-          ordemId: String(id),
-          sistema: "OrdemServico",
-          mensagem: String(error.message)
-        });
-
-        console.error(`Erro ao finalizar serviços da OS ${id}: ${error.message}`);
-      }
-
-      return ordemAtualizada;
-    }
-
-    // Atualiza o status através do repositório (sem alterar aprovação)
-    const ordemAtualizada =
-      await this.ordemServicoRepository.atualizarStatus(
-        id,
-        novoStatus
-      );
-
-    registrarMudancaStatus(
-      ordemAtual,
-      ordemAtualizada,
-      novoStatus
-    );
-
-    return ordemAtualizada;
+  async execute(id) {
+    const { ordem } = await this.transicionarStatus.execute({
+      osId: id,
+      para: STATUS.ENTREGUE,
+      origem: "os-service",
+      observacao: "Veículo entregue ao cliente"
+    });
+    return ordem;
   }
 }
 
@@ -396,8 +305,6 @@ class BuscarServicosFinalizadosComTempoMedio {
   constructor(ordemServicoRepository) {
     this.ordemServicoRepository = ordemServicoRepository;
   }
-
-  
 
   async execute(id) {
     const servicos = await this.ordemServicoRepository.buscarServicosFinalizadosComTempoMedio(id);
@@ -411,7 +318,6 @@ class BuscarServicosFinalizadosComTempoMedio {
       };
     }
 
-    // Formatar os dados de resposta
     const servicosFormatados = servicos.map(servico => ({
       id: servico.id,
       servico_id: servico.servico_id,
@@ -442,8 +348,8 @@ module.exports = {
   BuscarOrdensServico,
   BuscarOrdemServicoPorId,
   BuscarOrdensPorCliente,
-  AtualizarStatusOrdemServico,
-  AprovarOrdemServico,
-  AvancarStatusOrdemServico,
+  BuscarHistoricoOrdemServico,
+  BuscarOrdemServicoInterna,
+  EntregarOrdemServico,
   BuscarServicosFinalizadosComTempoMedio,
 };

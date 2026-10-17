@@ -37,7 +37,6 @@ class ServicoRepository{
          RETURNING *`
          , 
             [servico.nome || null, servico.descricao || null, servico.valor || null, id])
-            console.log(result);
             return result.rows[0]
     }
 }
