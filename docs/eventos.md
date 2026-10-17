@@ -48,8 +48,9 @@ Cada serviço declara a própria fila, retry e DLQ com o mesmo padrão (`<servic
 | `source` | serviço que publicou (`os-service`, `billing-service`, `execution-service`) |
 | `causationId` | `eventId` do evento que causou este, quando houver |
 | `payload` | sempre contém `osId` (número) |
+| `traceContext` | **opcional.** Cabeçalhos do trace distribuído do New Relic (`traceparent`, `tracestate`, `newrelic`) da transação que gerou o evento. Consumidores devem ignorá-lo se não o usarem |
 
-Propriedades AMQP: `persistent: true`, `contentType: application/json`, `messageId = eventId`, `correlationId`, `type`.
+Propriedades AMQP: `persistent: true`, `contentType: application/json`, `messageId = eventId`, `correlationId`, `type`. Os headers da mensagem levam `source`, `version` e, quando houver, os cabeçalhos do `traceContext`. Os detalhes estão em [observabilidade.md](observabilidade.md).
 
 ---
 
