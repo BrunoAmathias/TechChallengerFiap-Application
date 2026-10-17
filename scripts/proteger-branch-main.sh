@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Protege a branch main de um repositório pela API do GitHub:
-#   - merge só por Pull Request, com N aprovações (padrão 1)
-#   - status checks obrigatórios (padrão: "ci", o job dos workflows de CI)
-#   - sem push direto, sem force push e sem apagar a branch
+# Cria (ou atualiza) o ruleset "Main" de um repositório pela API do GitHub,
+# com as mesmas regras usadas no TechChallengerFiap-Application:
+#   - vale para as branches main e Homolog
+#   - merge só por Pull Request (sem push direto); aprovação descartada se houver novo push
+#   - status checks obrigatórios e branch atualizada antes do merge
+#   - sem force push e sem apagar a branch
 #
 # Requer um token com permissão de administração do repositório:
-#   export GH_TOKEN=<token clássico com escopo "repo" ou fine-grained com "Administration: write">
+#   export GH_TOKEN=<fine-grained com "Administration: Read and write" ou clássico com escopo "repo">
 #
 # Uso:
 #   ./scripts/proteger-branch-main.sh BrunoAmathias/TechChallengerFiap-Application
@@ -15,49 +17,79 @@
 #   CHECKS="Validar infraestrutura Terraform" ./scripts/proteger-branch-main.sh BrunoAmathias/TechChallengerFiap-DB
 #
 # Variáveis opcionais:
-#   CHECKS      checks obrigatórios separados por vírgula (padrão: ci)
-#   APROVACOES  aprovações exigidas no PR (padrão: 1)
-#   ADMINS      "true" aplica as regras também a administradores (padrão: true).
-#               Em repositório de uma pessoa só, com APROVACOES=1, ninguém consegue
-#               aprovar o próprio PR; use ADMINS=false para o dono poder fazer o merge
-#               como administrador (o push direto continua bloqueado para os demais).
+#   CHECKS      checks obrigatórios separados por vírgula (padrão: ci, o job dos workflows de CI)
+#   APROVACOES  aprovações exigidas no PR (padrão: 0, igual ao ruleset original)
+#   BRANCHES    branches protegidas separadas por vírgula (padrão: main,Homolog)
 set -euo pipefail
 
 REPO="${1:?Informe o repositório no formato dono/nome}"
 CHECKS="${CHECKS:-ci}"
-APROVACOES="${APROVACOES:-1}"
-ADMINS="${ADMINS:-true}"
+APROVACOES="${APROVACOES:-0}"
+BRANCHES="${BRANCHES:-main,Homolog}"
+NOME_RULESET="Main"
+GITHUB_ACTIONS_APP_ID=15368
 : "${GH_TOKEN:?Defina GH_TOKEN com um token de administração do repositório}"
 
-CONTEXTOS=$(printf '%s' "$CHECKS" | awk -F',' '{for (i=1;i<=NF;i++){gsub(/^ +| +$/,"",$i); printf "%s\"%s\"", (i>1?",":""), $i}}')
+API="https://api.github.com/repos/${REPO}/rulesets"
+RESPOSTA="$(mktemp)"
+trap 'rm -f "$RESPOSTA"' EXIT
+
+chamar() { # metodo url [corpo]
+  curl -sS -o "$RESPOSTA" -w "%{http_code}" -X "$1" \
+    -H "Accept: application/vnd.github+json" \
+    -H "Authorization: Bearer ${GH_TOKEN}" \
+    -H "X-GitHub-Api-Version: 2022-11-28" \
+    "$2" ${3:+-d "$3"}
+}
+
+lista_json() { # "a,b" + formato printf -> itens JSON separados por vírgula
+  printf '%s' "$1" | awk -F',' -v fmt="$2" '{for (i=1;i<=NF;i++){gsub(/^ +| +$/,"",$i); if ($i!="") printf "%s" fmt, (n++?",":""), $i}}'
+}
+
+REFS=$(lista_json "$BRANCHES" '"refs/heads/%s"')
+REGRA_CHECKS=""
+if [ -n "$CHECKS" ]; then
+  CONTEXTOS=$(lista_json "$CHECKS" "{\"context\":\"%s\",\"integration_id\":${GITHUB_ACTIONS_APP_ID}}")
+  REGRA_CHECKS=",{\"type\":\"required_status_checks\",\"parameters\":{\"strict_required_status_checks_policy\":true,\"do_not_enforce_on_create\":false,\"required_status_checks\":[${CONTEXTOS}]}}"
+fi
 
 BODY=$(cat <<EOF
 {
-  "required_status_checks": { "strict": true, "contexts": [${CONTEXTOS}] },
-  "enforce_admins": ${ADMINS},
-  "required_pull_request_reviews": {
-    "required_approving_review_count": ${APROVACOES},
-    "dismiss_stale_reviews": true
-  },
-  "restrictions": null,
-  "allow_force_pushes": false,
-  "allow_deletions": false,
-  "required_conversation_resolution": true
+  "name": "${NOME_RULESET}",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": { "ref_name": { "include": [${REFS}], "exclude": [] } },
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" },
+    { "type": "pull_request", "parameters": {
+        "required_approving_review_count": ${APROVACOES},
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false,
+        "allowed_merge_methods": ["merge", "squash", "rebase"]
+    } }${REGRA_CHECKS}
+  ]
 }
 EOF
 )
 
-STATUS=$(curl -sS -o /tmp/protecao-resposta.json -w "%{http_code}" -X PUT \
-  -H "Accept: application/vnd.github+json" \
-  -H "Authorization: Bearer ${GH_TOKEN}" \
-  -H "X-GitHub-Api-Version: 2022-11-28" \
-  "https://api.github.com/repos/${REPO}/branches/main/protection" \
-  -d "$BODY")
+# Procura um ruleset "Main" já existente para atualizar em vez de duplicar
+STATUS=$(chamar GET "${API}?per_page=100")
+if [ "$STATUS" != "200" ]; then
+  echo "FALHOU ao listar rulesets (HTTP ${STATUS}) em ${REPO}:"; cat "$RESPOSTA"; exit 1
+fi
+ID=$(tr -d '\n' < "$RESPOSTA" | grep -o "\"id\": *[0-9]*, *\"name\": *\"${NOME_RULESET}\"" | grep -o '[0-9]\+' | head -n1 || true)
 
-if [ "$STATUS" = "200" ]; then
-  echo "OK: main de ${REPO} protegida (checks: ${CHECKS}; aprovações: ${APROVACOES}; admins: ${ADMINS})"
+if [ -n "$ID" ]; then
+  STATUS=$(chamar PUT "${API}/${ID}" "$BODY"); ACAO="atualizado"
 else
-  echo "FALHOU (HTTP ${STATUS}) em ${REPO}:"
-  cat /tmp/protecao-resposta.json
-  exit 1
+  STATUS=$(chamar POST "$API" "$BODY"); ACAO="criado"
+fi
+
+if [ "$STATUS" = "200" ] || [ "$STATUS" = "201" ]; then
+  echo "OK: ruleset \"${NOME_RULESET}\" ${ACAO} em ${REPO} (branches: ${BRANCHES}; checks: ${CHECKS:-nenhum}; aprovações: ${APROVACOES})"
+else
+  echo "FALHOU (HTTP ${STATUS}) em ${REPO}:"; cat "$RESPOSTA"; exit 1
 fi
