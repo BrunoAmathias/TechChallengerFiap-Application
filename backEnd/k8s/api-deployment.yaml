@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: oficina-api
+  namespace: os
 
 spec:
   replicas: 2
@@ -16,6 +17,27 @@ spec:
         app: oficina-api
 
     spec:
+      # Aplica as migrations antes da API subir. O node-pg-migrate usa advisory
+      # lock no Postgres, então réplicas iniciando juntas não conflitam.
+      initContainers:
+        - name: migrate
+          image: backend-api:latest
+          imagePullPolicy: IfNotPresent
+          command: ["npm", "run", "migrate:up"]
+          env:
+            - name: DB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: api-secret
+                  key: DB_URL
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+
       containers:
         - name: api
           image: backend-api:latest
@@ -29,11 +51,25 @@ spec:
                 name: api-config
 
           env:
-            - name: DB_PASSWORD
+            - name: DB_URL
               valueFrom:
                 secretKeyRef:
                   name: api-secret
-                  key: DB_PASSWORD
+                  key: DB_URL
+
+            # Secrets "rabbitmq" e "service-auth" são criados pelo Terraform
+            # (repo TechChallengerFiap-K8s) no namespace os.
+            - name: RABBITMQ_URL
+              valueFrom:
+                secretKeyRef:
+                  name: rabbitmq
+                  key: RABBITMQ_URL
+
+            - name: SERVICE_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: service-auth
+                  key: SERVICE_TOKEN
 
             - name: JWT_SECRET
               valueFrom:
@@ -80,9 +116,11 @@ spec:
               cpu: "500m"
               memory: "512Mi"
 
+          # Liveness não depende do banco: uma queda do Neon tira o pod do
+          # balanceamento (readiness) sem reiniciar o processo.
           livenessProbe:
             httpGet:
-              path: /health
+              path: /health/live
               port: 3000
             initialDelaySeconds: 15
             periodSeconds: 20

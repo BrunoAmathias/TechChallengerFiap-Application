@@ -50,7 +50,6 @@ class ServicoController{
 
      async atualizar(req, res){
         const id = req.params.id
-        console.log("BODY:", req.body) 
         try {
             const result = await atualizaServico.execute(id, req.body)
             return res.json(result)

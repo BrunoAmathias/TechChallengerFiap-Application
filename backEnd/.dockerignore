@@ -1,0 +1,13 @@
+node_modules
+coverage
+.scannerwork
+.env
+.env.*
+*.log
+terraForm
+k8s
+tests
+db
+Dockerfile
+docker-compose.yml
+sonar-project.properties

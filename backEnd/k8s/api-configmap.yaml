@@ -2,9 +2,13 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: api-config
+  namespace: os
 
+# Configuração não sensível. A conexão com o banco (DB_URL) fica no api-secret,
+# gerado pelo cd.yml a partir dos GitHub Secrets.
 data:
-  DB_HOST: postgres-service
-  DB_NAME: oficina
-  DB_PORT: "5432"
-  DB_USER: postgres
+  NODE_ENV: production
+  PORT: "3000"
+  DB_SSL: "true"
+  LOG_LEVEL: info
+  SERVICE_NAME: oficina-os

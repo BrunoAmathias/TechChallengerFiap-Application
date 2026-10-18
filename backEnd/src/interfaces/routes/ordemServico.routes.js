@@ -210,9 +210,9 @@ router.get("/os/:id/servicos-finalizados", authMiddleware, (req, res) => OrdemSe
 
 /**
  * @swagger
- * /os/{id}/status:
- *   patch:
- *     summary: Atualiza o status de uma ordem de serviço
+ * /os/{id}/historico:
+ *   get:
+ *     summary: Histórico de status da ordem de serviço (todas as etapas da saga)
  *     tags: [Ordens de Serviço]
  *     security:
  *       - bearerAuth: []
@@ -223,38 +223,28 @@ router.get("/os/:id/servicos-finalizados", authMiddleware, (req, res) => OrdemSe
  *         schema:
  *           type: integer
  *         description: ID da ordem de serviço
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - status
- *             properties:
- *               status:
- *                 type: string
- *                 enum: [Aguardando aprovação, Em execução, Finalizada, Cancelada]
- *                 example: Em execução
  *     responses:
  *       200:
- *         description: Status atualizado com sucesso
+ *         description: Status atual e histórico em ordem cronológica
  *         content:
  *           application/json:
  *             schema:
- *               $ref: '#/components/schemas/OrdemServico'
- *       400:
- *         description: Status inválido
+ *               $ref: '#/components/schemas/HistoricoOrdemServico'
  *       401:
  *         description: Não autorizado
+ *       404:
+ *         description: Ordem não encontrada
  */
-router.patch("/os/:id/status", authMiddleware, (req, res) => OrdemServicoController.atualizarStatus(req, res));
+router.get("/os/:id/historico", authMiddleware, (req, res) => OrdemServicoController.buscarHistorico(req, res));
 
 /**
  * @swagger
- * /os/{id}/approve:
+ * /os/{id}/entregar:
  *   patch:
- *     summary: Aprova uma ordem de serviço
+ *     summary: Registra a entrega do veículo (Finalizada → Entregue)
+ *     description: |
+ *       Os demais status são alterados pelos eventos da saga (Billing e Execution).
+ *       A entrega é a única transição manual e publica o evento os.entregue.
  *     tags: [Ordens de Serviço]
  *     security:
  *       - bearerAuth: []
@@ -267,45 +257,18 @@ router.patch("/os/:id/status", authMiddleware, (req, res) => OrdemServicoControl
  *         description: ID da ordem de serviço
  *     responses:
  *       200:
- *         description: Ordem aprovada com sucesso
+ *         description: Ordem entregue
  *         content:
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/OrdemServico'
- *       400:
- *         description: Erro ao aprovar
  *       401:
  *         description: Não autorizado
+ *       404:
+ *         description: Ordem não encontrada
+ *       409:
+ *         description: A OS ainda não está Finalizada
  */
-router.patch("/os/:id/approve", authMiddleware, (req, res) => OrdemServicoController.aprovar(req, res));
-
-/**
- * @swagger
- * /os/{id}/advance:
- *   patch:
- *     summary: Avança o status de uma ordem de serviço
- *     tags: [Ordens de Serviço]
- *     security:
- *       - bearerAuth: []
- *     parameters:
- *       - in: path
- *         name: id
- *         required: true
- *         schema:
- *           type: integer
- *         description: ID da ordem de serviço
- *     responses:
- *       200:
- *         description: Status avançado com sucesso
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/OrdemServico'
- *       400:
- *         description: Erro ao avançar status
- *       401:
- *         description: Não autorizado
- */
-router.patch("/os/:id/advance", authMiddleware, (req, res) => OrdemServicoController.avancar(req, res));
+router.patch("/os/:id/entregar", authMiddleware, (req, res) => OrdemServicoController.entregar(req, res));
 
 module.exports = router;
