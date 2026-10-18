@@ -1,20 +1,18 @@
-# Usa imagem do Node
-FROM node:18
+FROM node:20-alpine
 
-# Cria diretório dentro do container
 WORKDIR /app
 
-# Copia package.json primeiro (melhor performance)
+ENV NODE_ENV=production
+
+# Dependências primeiro para aproveitar o cache de camadas
 COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Instala dependências
-RUN npm install
-
-# Copia o resto do projeto
+# Código da aplicação e migrations (ver .dockerignore)
 COPY . .
 
-# Porta da sua API
+USER node
+
 EXPOSE 3000
 
-# Comando pra rodar
-CMD ["npm", "start"]
+CMD ["node", "src/server.js"]

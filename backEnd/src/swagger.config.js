@@ -1,4 +1,5 @@
 const swaggerJSDoc = require('swagger-jsdoc');
+const StatusTransition = require('./domain/statusTransition');
 
 const options = {
   definition: {
@@ -21,8 +22,35 @@ const options = {
           scheme: 'bearer',
           bearerFormat: 'JWT',
         },
+        serviceToken: {
+          type: 'apiKey',
+          in: 'header',
+          name: 'x-service-token',
+        },
       },
       schemas: {
+        HistoricoOrdemServico: {
+          type: 'object',
+          properties: {
+            ordem_servico_id: { type: 'integer' },
+            status_atual: { type: 'string', enum: StatusTransition.getTodosStatus() },
+            historico: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  id: { type: 'integer' },
+                  status_anterior: { type: 'string', nullable: true },
+                  status: { type: 'string' },
+                  origem: { type: 'string', example: 'billing-service' },
+                  event_id: { type: 'string', format: 'uuid', nullable: true },
+                  observacao: { type: 'string', nullable: true },
+                  created_at: { type: 'string', format: 'date-time' },
+                },
+              },
+            },
+          },
+        },
         Cliente: {
           type: 'object',
           properties: {
@@ -50,7 +78,8 @@ const options = {
             id: { type: 'integer' },
             cliente_id: { type: 'integer' },
             veiculo_id: { type: 'integer' },
-            status: { type: 'string', enum: ['Aguardando aprovação', 'Em execução', 'Finalizada', 'Cancelada'] },
+            status: { type: 'string', enum: StatusTransition.getTodosStatus() },
+            motivo_cancelamento: { type: 'string', nullable: true },
             valor_total: { type: 'number' },
             data_criacao: { type: 'string', format: 'date-time' },
             servicos: {

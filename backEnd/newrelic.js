@@ -23,7 +23,9 @@ exports.config = {
      * issues with the agent, 'info' and higher will impose the least overhead on
      * production applications.
      */
-    level: 'info'
+    level: 'info',
+    // stdout em vez de arquivo: o container roda sem permissão de escrita em /app
+    filepath: 'stdout'
   },
   /**
    * This provides instrumentation for `setTimeout` and `setInterval` calls.

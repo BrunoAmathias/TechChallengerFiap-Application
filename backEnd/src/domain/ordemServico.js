@@ -1,3 +1,5 @@
+const StatusTransition = require("./statusTransition");
+
 class OrdemServico {
   constructor({
     id,
@@ -6,7 +8,7 @@ class OrdemServico {
     servicos = [],
     pecas = [],
     valor_total = 0,
-    status = "Recebida",
+    status = StatusTransition.STATUS.RECEBIDA,
     aprovado = false,
     created_at,
     updated_at,
@@ -26,21 +28,12 @@ class OrdemServico {
   }
 
   validar() {
-    const statuses = [
-      "Recebida",
-      "Em diagnóstico",
-      "Aguardando aprovação",
-      "Em execução",
-      "Finalizada",
-      "Entregue",
-    ];
-
     if (!this.cliente_id) throw new Error("Cliente é obrigatório");
     if (!this.veiculo_id) throw new Error("Veículo é obrigatório");
     if (!Array.isArray(this.servicos)) throw new Error("Serviços devem ser uma lista");
     if (!Array.isArray(this.pecas)) throw new Error("Peças devem ser uma lista");
     if (this.valor_total == null || isNaN(this.valor_total)) throw new Error("Valor total inválido");
-    if (!statuses.includes(this.status)) throw new Error("Status inválido");
+    if (!StatusTransition.isValidStatus(this.status)) throw new Error("Status inválido");
   }
 }
 

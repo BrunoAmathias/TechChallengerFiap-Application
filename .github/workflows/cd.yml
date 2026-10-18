@@ -1,268 +1,118 @@
-name: CD - Deploy Aplicação (main)
+name: CD - OS Service (main)
 
 on:
   push:
-    branches:
-      - main
-
-concurrency:
-  group: production-deploy
-  cancel-in-progress: false
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
+  pull-requests: read
+
+concurrency:
+  group: cd-os-production
+  cancel-in-progress: false
 
 env:
   EKS_CLUSTER_NAME: techchallenge-dev
-  AWS_REGION: ${{ secrets.AWS_REGION }}
-  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  NAMESPACE: os
+  DEPLOYMENT: oficina-api
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'os-service' }}
 
 jobs:
+  # Mesmos testes, lint, cobertura e Sonar do CI antes de qualquer deploy
+  ci:
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+
   deploy:
     name: Deploy no EKS
+    needs: ci
     runs-on: ubuntu-latest
     environment: production
-    timeout-minutes: 30
+    timeout-minutes: 25
+
+    defaults:
+      run:
+        working-directory: backEnd
 
     steps:
       - name: Checkout código
-        uses: actions/checkout@v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
       - name: Configurar credenciais AWS
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@463133d79af6d001e45482f356e244208e65f0c5 # v6
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Validar acesso à AWS
-        run: |
-          aws sts get-caller-identity
-
-          aws eks describe-cluster \
-            --name "$EKS_CLUSTER_NAME" \
-            --region "$AWS_REGION" \
-            --query "cluster.status" \
-            --output text
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login no Amazon ECR
-        id: login-ecr
+        id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build e push da imagem
-        id: build-image
+      - name: Build e push da imagem (tag = SHA do commit)
+        id: imagem
         env:
-          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
         run: |
-          IMAGE="$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-          IMAGE_LATEST="$REGISTRY/$ECR_REPOSITORY:latest"
-
-          docker build \
-            -t "$IMAGE" \
-            -t "$IMAGE_LATEST" \
-            ./backEnd
-
+          IMAGE="$REGISTRY/$ECR_REPOSITORY:${GITHUB_SHA}"
+          docker build -t "$IMAGE" -t "$REGISTRY/$ECR_REPOSITORY:latest" .
           docker push "$IMAGE"
-          docker push "$IMAGE_LATEST"
-
+          docker push "$REGISTRY/$ECR_REPOSITORY:latest"
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
-      - name: Configurar kubectl para o cluster EKS
+      - name: Configurar kubectl
         run: |
-          aws eks update-kubeconfig \
-            --name "$EKS_CLUSTER_NAME" \
-            --region "$AWS_REGION"
+          aws eks update-kubeconfig --name "$EKS_CLUSTER_NAME" --region "${{ secrets.AWS_REGION }}"
+          # Namespace e Secrets rabbitmq/service-auth vêm do Terraform (repo TechChallengerFiap-K8s)
+          kubectl get namespace "$NAMESPACE"
+          kubectl -n "$NAMESPACE" get secret rabbitmq service-auth
 
-          kubectl config current-context
-          kubectl get nodes
-
-      - name: Validar manifests Kubernetes
-        run: |
-          kubectl apply \
-            --dry-run=client \
-            -f backEnd/k8s/api-configmap.yaml
-
-          kubectl apply \
-            --dry-run=client \
-            -f backEnd/k8s/api-deployment.yaml
-
-          kubectl apply \
-            --dry-run=client \
-            -f backEnd/k8s/api-service.yaml
-
-          kubectl apply \
-            --dry-run=client \
-            -f backEnd/k8s/api-hpa.yaml
-
-          kubectl apply \
-            --dry-run=client \
-            -f backEnd/k8s/ingress.yaml
-
-      - name: Aplicar ConfigMap
-        run: |
-          kubectl apply -f backEnd/k8s/api-configmap.yaml
-
-      - name: Validar secrets obrigatórios
+      - name: Criar/atualizar o Secret da aplicação
         env:
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_URL: ${{ secrets.DB_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           MOCK_USER_EMAIL: ${{ secrets.MOCK_USER_EMAIL }}
           MOCK_USER_PASSWORD: ${{ secrets.MOCK_USER_PASSWORD }}
           MOCK_USER_ID: ${{ secrets.MOCK_USER_ID }}
           NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
         run: |
-          test -n "$DB_PASSWORD" || {
-            echo "DB_PASSWORD não foi configurado"
-            exit 1
-          }
-
-          test -n "$JWT_SECRET" || {
-            echo "JWT_SECRET não foi configurado"
-            exit 1
-          }
-
-          test -n "$MOCK_USER_EMAIL" || {
-            echo "MOCK_USER_EMAIL não foi configurado"
-            exit 1
-          }
-
-          test -n "$MOCK_USER_PASSWORD" || {
-            echo "MOCK_USER_PASSWORD não foi configurado"
-            exit 1
-          }
-
-          test -n "$MOCK_USER_ID" || {
-            echo "MOCK_USER_ID não foi configurado"
-            exit 1
-          }
-
-          test -n "$NEW_RELIC_LICENSE_KEY" || {
-            echo "NEW_RELIC_LICENSE_KEY não foi configurado"
-            exit 1
-          }
-
-          echo "Todos os secrets obrigatórios estão configurados."
-
-      - name: Criar ou atualizar Secret da aplicação
-        env:
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          MOCK_USER_EMAIL: ${{ secrets.MOCK_USER_EMAIL }}
-          MOCK_USER_PASSWORD: ${{ secrets.MOCK_USER_PASSWORD }}
-          MOCK_USER_ID: ${{ secrets.MOCK_USER_ID }}
-          NEW_RELIC_LICENSE_KEY: ${{ secrets.NEW_RELIC_LICENSE_KEY }}
-        run: |
-          kubectl create secret generic api-secret \
-            --from-literal=DB_PASSWORD="$DB_PASSWORD" \
+          set -euo pipefail
+          for VAR in DB_URL JWT_SECRET MOCK_USER_EMAIL MOCK_USER_PASSWORD MOCK_USER_ID NEW_RELIC_LICENSE_KEY; do
+            [ -n "${!VAR}" ] || { echo "::error::Secret $VAR não configurado"; exit 1; }
+          done
+          kubectl -n "$NAMESPACE" create secret generic api-secret \
+            --from-literal=DB_URL="$DB_URL" \
             --from-literal=JWT_SECRET="$JWT_SECRET" \
             --from-literal=MOCK_USER_EMAIL="$MOCK_USER_EMAIL" \
             --from-literal=MOCK_USER_PASSWORD="$MOCK_USER_PASSWORD" \
             --from-literal=MOCK_USER_ID="$MOCK_USER_ID" \
             --from-literal=NEW_RELIC_LICENSE_KEY="$NEW_RELIC_LICENSE_KEY" \
-            --dry-run=client \
-            -o yaml | kubectl apply -f -
+            --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Validar Secret criado no Kubernetes
+      - name: Aplicar manifests (Kustomize) com a imagem nova
+        env:
+          IMAGE: ${{ steps.imagem.outputs.image }}
         run: |
-          REQUIRED_KEYS=(
-            "DB_PASSWORD"
-            "JWT_SECRET"
-            "MOCK_USER_EMAIL"
-            "MOCK_USER_PASSWORD"
-            "MOCK_USER_ID"
-            "NEW_RELIC_LICENSE_KEY"
-          )
+          # A troca vale para o container da API e para o initContainer de migrations
+          kubectl kustomize k8s \
+            | sed "s#image: backend-api:latest#image: ${IMAGE}#" \
+            | kubectl apply -f -
+          kubectl -n "$NAMESPACE" rollout restart deployment/"$DEPLOYMENT"
 
-          for KEY in "${REQUIRED_KEYS[@]}"; do
-            VALUE="$(kubectl get secret api-secret \
-              -o "jsonpath={.data.${KEY}}")"
+      - name: Aguardar rollout
+        run: kubectl -n "$NAMESPACE" rollout status deployment/"$DEPLOYMENT" --timeout=300s
 
-            if [ -z "$VALUE" ]; then
-              echo "Chave ausente no api-secret: $KEY"
-              exit 1
-            fi
-
-            echo "Chave encontrada: $KEY"
-          done
-
-          SECRET_COUNT="$(kubectl get secret api-secret \
-            -o go-template='{{len .data}}')"
-
-          if [ "$SECRET_COUNT" -ne 6 ]; then
-            echo "Quantidade inesperada de chaves no api-secret: $SECRET_COUNT"
-            exit 1
-          fi
-
-          echo "api-secret validado com $SECRET_COUNT chaves."
-
-      - name: Aplicar Deployment, Service, HPA e Ingress
+      - name: Smoke test (/health dentro do cluster)
         run: |
-          kubectl apply -f backEnd/k8s/api-deployment.yaml
-          kubectl apply -f backEnd/k8s/api-service.yaml
-          kubectl apply -f backEnd/k8s/api-hpa.yaml
-          kubectl apply -f backEnd/k8s/ingress.yaml
+          kubectl -n "$NAMESPACE" exec deploy/"$DEPLOYMENT" -c api -- \
+            node -e 'fetch("http://localhost:3000/health").then(r=>r.json()).then(j=>{console.log(j);if(j.status==="DOWN")process.exit(1)})'
 
-      - name: Atualizar imagem no Deployment
-        run: |
-          kubectl set image \
-            deployment/oficina-api \
-            api="${{ steps.build-image.outputs.image }}"
-
-      - name: Aguardar rollout concluir
-        run: |
-          kubectl rollout status \
-            deployment/oficina-api \
-            --timeout=180s
-
-      - name: Validar pods da aplicação
-        run: |
-          kubectl get pods \
-            -l app=oficina-api \
-            -o wide
-
-          kubectl wait \
-            --for=condition=Ready \
-            pod \
-            -l app=oficina-api \
-            --timeout=120s
-
-      - name: Validar Service e Ingress
-        run: |
-          kubectl get service api-service
-          kubectl get ingress api-ingress
-
-      - name: Exibir diagnóstico em caso de falha
+      - name: Diagnóstico em caso de falha
         if: failure()
         run: |
-          echo "===== Deployment ====="
-          kubectl describe deployment oficina-api || true
-
-          echo "===== ReplicaSets ====="
-          kubectl get rs -l app=oficina-api -o wide || true
-
-          echo "===== Pods ====="
-          kubectl get pods -l app=oficina-api -o wide || true
-
-          echo "===== Descrição dos pods ====="
-          kubectl describe pods -l app=oficina-api || true
-
-          echo "===== Logs atuais ====="
-          kubectl logs \
-            -l app=oficina-api \
-            --all-containers=true \
-            --tail=100 \
-            --prefix=true || true
-
-          echo "===== Logs anteriores ====="
-          kubectl logs \
-            -l app=oficina-api \
-            --all-containers=true \
-            --previous \
-            --tail=100 \
-            --prefix=true || true
-
-          echo "===== Eventos recentes ====="
-          kubectl get events \
-            --sort-by=.metadata.creationTimestamp \
-            | tail -100 || true
+          kubectl -n "$NAMESPACE" get pods -o wide || true
+          kubectl -n "$NAMESPACE" describe deployment "$DEPLOYMENT" || true
+          kubectl -n "$NAMESPACE" logs deploy/"$DEPLOYMENT" --all-containers --tail=100 || true
+          kubectl -n "$NAMESPACE" get events --sort-by=.metadata.creationTimestamp | tail -30 || true

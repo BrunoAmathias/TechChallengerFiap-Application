@@ -1,0 +1,200 @@
+{
+  "name": "Oficina - Saga e Microsserviços",
+  "description": "OS Service, Billing e Execution: saga coreografada via RabbitMQ (eventos, retries, DLQ, compensações) e saúde dos serviços.",
+  "permissions": "PUBLIC_READ_WRITE",
+  "pages": [
+    {
+      "name": "Saga",
+      "description": "Eventos consumidos por serviço (evento customizado SagaEvento), compensações e status das OS.",
+      "widgets": [
+        {
+          "title": "Eventos processados",
+          "layout": { "column": 1, "row": 1, "width": 3, "height": 3 },
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT count(*) AS 'Processados' FROM SagaEvento WHERE status = 'processado' SINCE 1 day ago" }
+            ]
+          }
+        },
+        {
+          "title": "Retries e DLQ",
+          "layout": { "column": 4, "row": 1, "width": 3, "height": 3 },
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT filter(count(*), WHERE status = 'retry') AS 'Retries', filter(count(*), WHERE status = 'dlq') AS 'Enviados à DLQ' FROM SagaEvento SINCE 1 day ago" }
+            ],
+            "thresholds": [{ "alertSeverity": "CRITICAL", "value": 1 }]
+          }
+        },
+        {
+          "title": "Compensações executadas",
+          "layout": { "column": 7, "row": 1, "width": 3, "height": 3 },
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT count(*) AS 'Compensações' FROM SagaCompensacao SINCE 1 day ago" }
+            ]
+          }
+        },
+        {
+          "title": "Latência p95 da saga (geração → consumo)",
+          "layout": { "column": 10, "row": 1, "width": 3, "height": 3 },
+          "visualization": { "id": "viz.billboard" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT percentile(latenciaMs, 95) AS 'ms' FROM SagaEvento WHERE status = 'processado' SINCE 1 day ago" }
+            ]
+          }
+        },
+        {
+          "title": "Eventos consumidos por tipo",
+          "layout": { "column": 1, "row": 4, "width": 6, "height": 3 },
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT count(*) FROM SagaEvento FACET eventType TIMESERIES" }
+            ]
+          }
+        },
+        {
+          "title": "Latência p95 por evento (ms)",
+          "layout": { "column": 7, "row": 4, "width": 6, "height": 3 },
+          "visualization": { "id": "viz.bar" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT percentile(latenciaMs, 95) FROM SagaEvento WHERE status = 'processado' FACET eventType" }
+            ]
+          }
+        },
+        {
+          "title": "Falhas no consumo (retry e DLQ)",
+          "layout": { "column": 1, "row": 7, "width": 6, "height": 3 },
+          "visualization": { "id": "viz.table" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT osId, servico, eventType, status, tentativa, erro FROM SagaEvento WHERE status IN ('retry', 'dlq') SINCE 1 day ago LIMIT 50" }
+            ]
+          }
+        },
+        {
+          "title": "Compensações",
+          "layout": { "column": 7, "row": 7, "width": 6, "height": 3 },
+          "visualization": { "id": "viz.table" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT osId, servico, evento, acao, motivo FROM SagaCompensacao SINCE 1 week ago LIMIT 50" }
+            ]
+          }
+        },
+        {
+          "title": "Mudanças de status das OS",
+          "layout": { "column": 1, "row": 10, "width": 4, "height": 3 },
+          "visualization": { "id": "viz.pie" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT count(*) FROM StatusOS FACET novoStatus SINCE 1 week ago" }
+            ]
+          }
+        },
+        {
+          "title": "Últimos eventos por OS",
+          "layout": { "column": 5, "row": 10, "width": 8, "height": 3 },
+          "visualization": { "id": "viz.table" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT osId, origem, servico, eventType, status, latenciaMs FROM SagaEvento SINCE 1 day ago LIMIT 100" }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Serviços",
+      "description": "Throughput, latência, erros e logs dos três microsserviços.",
+      "widgets": [
+        {
+          "title": "Throughput (transações/min)",
+          "layout": { "column": 1, "row": 1, "width": 4, "height": 3 },
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT rate(count(*), 1 minute) FROM Transaction WHERE appName IN ('oficina-api', 'oficina-billing', 'oficina-execution') FACET appName TIMESERIES" }
+            ]
+          }
+        },
+        {
+          "title": "Latência p95 das requisições HTTP (s)",
+          "layout": { "column": 5, "row": 1, "width": 4, "height": 3 },
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT percentile(duration, 95) FROM Transaction WHERE appName IN ('oficina-api', 'oficina-billing', 'oficina-execution') AND transactionType = 'Web' FACET appName TIMESERIES" }
+            ]
+          }
+        },
+        {
+          "title": "Taxa de erro (%)",
+          "layout": { "column": 9, "row": 1, "width": 4, "height": 3 },
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT percentage(count(*), WHERE error IS true) FROM Transaction WHERE appName IN ('oficina-api', 'oficina-billing', 'oficina-execution') FACET appName TIMESERIES" }
+            ]
+          }
+        },
+        {
+          "title": "Consumo de mensagens (transações RabbitMQ)",
+          "layout": { "column": 1, "row": 4, "width": 6, "height": 3 },
+          "visualization": { "id": "viz.bar" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT count(*) FROM Transaction WHERE appName IN ('oficina-api', 'oficina-billing', 'oficina-execution') AND transactionType = 'Other' FACET appName, name SINCE 1 day ago" }
+            ]
+          }
+        },
+        {
+          "title": "Erros mais frequentes",
+          "layout": { "column": 7, "row": 4, "width": 6, "height": 3 },
+          "visualization": { "id": "viz.table" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT count(*) FROM TransactionError WHERE appName IN ('oficina-api', 'oficina-billing', 'oficina-execution') FACET appName, error.message SINCE 1 day ago LIMIT 20" }
+            ]
+          }
+        },
+        {
+          "title": "Alertas de pagamento e integrações (Billing)",
+          "layout": { "column": 1, "row": 7, "width": 4, "height": 3 },
+          "visualization": { "id": "viz.bar" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT count(*) FROM PagamentoDivergente, WebhookAssinaturaInvalida, FalhaIntegracao FACET eventType() SINCE 1 week ago" }
+            ]
+          }
+        },
+        {
+          "title": "Tempo médio por etapa da execução (min)",
+          "layout": { "column": 5, "row": 7, "width": 4, "height": 3 },
+          "visualization": { "id": "viz.bar" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT average(duracaoMinutos) FROM SagaEtapa FACET statusAnterior SINCE 1 week ago" }
+            ]
+          }
+        },
+        {
+          "title": "Logs de erro por serviço",
+          "layout": { "column": 9, "row": 7, "width": 4, "height": 3 },
+          "visualization": { "id": "viz.line" },
+          "rawConfiguration": {
+            "nrqlQueries": [
+              { "accountIds": [0], "query": "SELECT count(*) FROM Log WHERE entity.name IN ('oficina-api', 'oficina-billing', 'oficina-execution') AND level IN ('error', 'fatal') FACET entity.name TIMESERIES" }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

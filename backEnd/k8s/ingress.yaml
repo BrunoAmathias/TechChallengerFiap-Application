@@ -2,7 +2,13 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: api-ingress
+  namespace: os
   annotations:
+    # ALB compartilhado pelos 3 microsserviços. O OS Service é a rota padrão (/)
+    # com a menor prioridade; Billing (/orcamentos, /pagamentos, /webhooks) e
+    # Execution (/execucoes) registram paths próprios com group.order menor.
+    alb.ingress.kubernetes.io/group.name: oficina
+    alb.ingress.kubernetes.io/group.order: "100"
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/healthcheck-path: /health
