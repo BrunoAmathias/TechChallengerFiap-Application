@@ -1,771 +1,267 @@
-# TechChallengerFiap-Application
+# Oficina Mecânica — Tech Challenge FIAP
 
-## Propósito
+Plataforma de gestão de oficina mecânica: abertura de ordens de serviço (OS), orçamento com aprovação do cliente, pagamento online pelo Mercado Pago e acompanhamento da execução pela oficina.
 
-Este repositório concentra a API principal do sistema de oficina mecânica. Ele é responsável por gerenciar clientes, veículos, serviços, peças, ordens de serviço, autenticação JWT e documentação OpenAPI/Swagger da aplicação.
+Na **Fase 4**, o monólito foi dividido em **três microsserviços** que se coordenam por uma **saga coreografada** sobre RabbitMQ. Este repositório tem o **OS Service** e a documentação geral do sistema.
 
-## Tecnologias utilizadas
+## Sumário
 
-- Node.js 18+
-- Express 5
-- PostgreSQL 15
-- JWT (jsonwebtoken)
-- Swagger JSdoc + Swagger UI
-- Jest + Supertest
-- Docker / Docker Compose
-- Kubernetes + Kind
-- Terraform
-- New Relic
+- [Visão geral do sistema](#visão-geral-do-sistema)
+- [Repositórios](#repositórios)
+- [Fluxo da ordem de serviço (saga)](#fluxo-da-ordem-de-serviço-saga)
+- [Como rodar localmente](#como-rodar-localmente)
+- [Deploy na AWS](#deploy-na-aws)
+- [CI/CD e qualidade](#cicd-e-qualidade)
+- [Observabilidade](#observabilidade)
+- [OS Service (este repositório)](#os-service-este-repositório)
+- [Documentação](#documentação)
 
-## Arquitetura específica do repositório
+## Visão geral do sistema
 
 ```mermaid
 flowchart LR
-    Client[Cliente / Frontend / Postman] --> API[API Node.js<br/>Express + Routes]
-    API --> APP[Application Layer]
-    APP --> DOMAIN[Domain Layer]
-    APP --> REPO[Infrastructure / Repositories]
-    REPO --> DB[(PostgreSQL)]
-    API --> SWAGGER[Swagger UI /api-docs]
-    API --> K8S[Kubernetes / HPA / Services]
+    Cliente[Cliente / atendente / mecânico] -->|HTTP| ALB[ALB compartilhado]
+    Cliente --> Lambda[Lambda de login por CPF]
+    MP[Mercado Pago] -->|webhook| ALB
+    ALB --> OS[OS Service]
+    ALB --> BIL[Billing]
+    ALB --> EXE[Execution]
+    OS <-->|eventos| MQ[(RabbitMQ)]
+    BIL <-->|eventos| MQ
+    EXE <-->|eventos| MQ
+    BIL -->|Checkout Pro, consulta e estorno| MP
+    OS --> PG1[(PostgreSQL<br/>os_db)]
+    Lambda --> PG1
+    BIL --> PG2[(PostgreSQL<br/>billing_db)]
+    EXE --> MDB[(MongoDB<br/>Atlas)]
 ```
 
-A aplicação segue uma organização em camadas com domínio, aplicação, infraestrutura e interfaces HTTP, permitindo regras de negócio independentes do framework e da persistência.
+| Serviço | Responsabilidade | Banco | Tecnologia |
+|---|---|---|---|
+| **OS Service** | Clientes, veículos, serviços, peças e estoque; abertura e status da OS; entrega | PostgreSQL (Neon) | Node.js 20, Express 5 |
+| **Billing** | Orçamento, link de aprovação por e-mail, pagamento e estorno no Mercado Pago | PostgreSQL (Neon) | Node.js 20, Express 5, SDK Mercado Pago |
+| **Execution** | Fila da oficina, prioridade, diagnóstico, reparo, finalização e tempos | MongoDB (Atlas) | Node.js 20, Express 5, Mongoose |
 
-## Como executar
+Pontos principais da arquitetura:
+- **Saga coreografada** com compensações: recusa do orçamento, falha no pagamento e falha na execução cancelam a OS, devolvem o estoque e, quando já houve pagamento, fazem o estorno.
+- **Transactional Outbox** e **consumidores idempotentes**: nenhum evento é perdido ou aplicado duas vezes.
+- **Retry e DLQ** pelo próprio RabbitMQ: 3 tentativas com atraso e, depois, fila de mensagens mortas.
+- **Banco por serviço**: nenhum serviço acessa o banco de outro.
+- **Trace distribuído** no New Relic atravessando os serviços pelos eventos.
 
-### 1) Opção recomendada com Docker
+A arquitetura completa, com diagramas, está em [Doc_Arquitetura/Arquitetura_Microsservicos_Fase4.md](Doc_Arquitetura/Arquitetura_Microsservicos_Fase4.md).
 
-```bash
-cd TechChallengerFiap-Application/backEnd
-docker-compose up --build
+## Repositórios
+
+| Repositório | O que tem |
+|---|---|
+| **[TechChallengerFiap-Application](https://github.com/BrunoAmathias/TechChallengerFiap-Application)** (este) | OS Service, contratos de eventos e documentação geral |
+| [TechChallengerFiap-Billing](https://github.com/BrunoAmathias/TechChallengerFiap-Billing) | Billing Service |
+| [TechChallengerFiap-Execution](https://github.com/BrunoAmathias/TechChallengerFiap-Execution) | Execution Service |
+| [TechChallengerFiap-K8s](https://github.com/BrunoAmathias/TechChallengerFiap-K8s) | Terraform do EKS, RabbitMQ, ECR, namespaces e Secrets compartilhados |
+| [TechChallengerFiap-DB](https://github.com/BrunoAmathias/TechChallengerFiap-DB) | Terraform dos bancos (Neon `os_db` e `billing_db`, MongoDB Atlas) |
+| [TechChallengerFiap-ServerLess](https://github.com/BrunoAmathias/TechChallengerFiap-ServerLess) | Lambda de autenticação de clientes por CPF |
+
+## Fluxo da ordem de serviço (saga)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant OS as OS Service
+    participant B as Billing
+    participant E as Execution
+    OS->>B: os.aberta
+    B->>OS: orcamento.gerado (OS: Aguardando aprovação)
+    Note over B: cliente aprova pelo link do e-mail
+    B->>OS: orcamento.aprovado (OS: Aguardando pagamento)
+    Note over B: Mercado Pago confirma o pagamento (webhook)
+    B->>OS: pagamento.confirmado (OS: Aguardando execução)
+    B->>E: pagamento.confirmado (execução NA_FILA)
+    E->>OS: execucao.status_atualizado (Em diagnóstico, Em execução)
+    E->>OS: execucao.finalizada (OS: Finalizada)
+    Note over OS: PATCH /os/:id/entregar → Entregue (os.entregue)
 ```
 
-A API ficará disponível em:
+| Compensação | Gatilho | Efeito |
+|---|---|---|
+| Orçamento recusado ou impossível | `orcamento.recusado` / `orcamento.falhou` | OS **Cancelada** e estoque devolvido |
+| Pagamento rejeitado ou expirado | `pagamento.falhou` | OS **Cancelada** e estoque devolvido |
+| Falha na execução | `execucao.falhou` | Billing **estorna** o pagamento; OS **Cancelada** e estoque devolvido |
 
-- Swagger: http://localhost:3000/api-docs
-- API: http://localhost:3000
-- PostgreSQL: localhost:5433
-- pgAdmin: http://localhost:5050
+Contratos de todos os eventos, envelope e máquina de estados: [docs/eventos.md](docs/eventos.md).
 
-### 2) Execução local sem Docker
+## Como rodar localmente
+
+Pré-requisitos: Docker Desktop e Node.js 20.
+
+### Só o OS Service
 
 ```bash
-cd TechChallengerFiap-Application/backEnd
-npm install
+cd backEnd
 cp .env.example .env
-npm run dev
+docker compose up -d --build     # Postgres (5433), RabbitMQ (5672, painel em 15672), migrations e API
 ```
 
-Se desejar rodar em produção:
+- API: http://localhost:3000
+- Swagger: http://localhost:3000/api-docs
+- Painel do RabbitMQ: http://localhost:15672 (usuário e senha `oficina`)
+
+Sem Docker para a API: `npm install`, `npm run migrate:up` (com `DB_URL` apontando para um Postgres) e `npm run dev`.
+
+### Os três serviços juntos (saga completa)
+
+Os três usam o **mesmo RabbitMQ**: suba o do OS Service e rode os outros dois apontando para ele (é o padrão dos `.env.example`).
 
 ```bash
-npm start
+# 1) OS Service + RabbitMQ (porta 3000)
+cd TechChallengerFiap-Application/backEnd && cp .env.example .env && docker compose up -d --build
+
+# 2) Billing (porta 3001), com o Mercado Pago simulado (MERCADOPAGO_MODE=fake)
+cd TechChallengerFiap-Billing && cp .env.example .env
+docker compose up -d db
+npm install && DB_URL=postgresql://postgres:postgres@localhost:5434/billing_db npm run migrate:up
+npm run dev
+
+# 3) Execution (porta 3002)
+cd TechChallengerFiap-Execution && cp .env.example .env
+docker compose up -d mongo
+npm install && npm run dev
 ```
+
+Use o mesmo `JWT_SECRET` e o mesmo `SERVICE_TOKEN` nos três `.env`. O token JWT vem do `POST /login` do OS Service.
+
+## Deploy na AWS
+
+Ordem do primeiro deploy:
+
+1. **[TechChallengerFiap-DB](https://github.com/BrunoAmathias/TechChallengerFiap-DB):** cria os bancos e usuários (Neon e Atlas).
+2. **[TechChallengerFiap-K8s](https://github.com/BrunoAmathias/TechChallengerFiap-K8s):** cria o EKS, o RabbitMQ, os repositórios no ECR, os namespaces `os`, `billing` e `execution` e os Secrets compartilhados (`rabbitmq` e `service-auth`).
+3. **Serviços:** o merge na `main` de cada repositório roda o CD, que publica a imagem no ECR e aplica os manifests no namespace do serviço.
+
+Os três serviços ficam atrás de **um ALB compartilhado** (`group.name: oficina`):
+
+| Path | Serviço |
+|---|---|
+| `/orcamentos`, `/pagamentos`, `/webhooks/mercadopago` | Billing |
+| `/execucoes` | Execution |
+| `/` (demais rotas) | OS Service |
+
+O endereço do ALB aparece em `kubectl get ingress -A`.
 
 ## CI/CD e qualidade
 
+Cada repositório tem pipelines próprios:
+
 | Workflow | Quando roda | O que faz |
 |---|---|---|
-| `.github/workflows/ci.yml` | PR para `Dev`, `Homolog` e `main`; push em `Dev` e `Homolog` | `npm ci`, lint, migrations num Postgres de serviço, testes com cobertura, SonarCloud + Quality Gate, `docker build` |
-| `.github/workflows/cd.yml` | push na `main` (merge do PR) ou manual | roda o CI inteiro; build e push da imagem no ECR (`os-service:<sha>`); cria o Secret `api-secret` a partir dos GitHub Secrets; `kubectl kustomize` com a imagem nova; rollout e smoke test do `/health` |
+| `ci.yml` | PR para `Dev`, `Homolog` e `main`; push em `Dev` e `Homolog` | lint, migrations num Postgres de serviço, testes com **cobertura mínima de 80%** (inclui BDD), `docker build` |
+| `cd.yml` | merge na `main` | CI completo com **SonarCloud e Quality Gate** (reprovação bloqueia o deploy), imagem no ECR (tag = SHA), Secret do serviço, `kubectl kustomize` + apply, rollout e smoke test |
 
-**Qualidade exigida no CI** (o job `ci` falha se qualquer item falhar):
-- ESLint (`npm run lint`);
-- testes unitários, funcionais, BDD e de integração (Postgres de serviço no CI) com **cobertura mínima de 80%** em linhas, branches, funções e statements (`coverageThreshold` do `jest.config.js`);
-- cenários **BDD** em português (`tests/features/*.feature`, jest-cucumber), rodados junto com os demais testes;
-- **SonarCloud** (projeto `BrunoAmathias_TechChallengerFiap`) com `sonar.qualitygate.wait=true`, **só na `main`** (dentro do CD, antes do deploy): o plano da organização no SonarCloud não libera resultados nem Quality Gate de outras branches. Quality Gate reprovado **impede o deploy**.
+| Serviço | Testes | Linhas | Branches |
+|---|---|---|---|
+| OS Service | 258 | 97,3% | 85,9% |
+| Billing | 142 | 97,0% | 85,3% |
+| Execution | 77 | 98,5% | 84,6% |
 
-```bash
-npm run lint
-npm run test:bdd
-DB_URL=postgresql://... npm run migrate:up && npm run test:coverage   # todos os testes, inclusive integração
+Os cenários **BDD** ficam em `tests/features/*.feature` (Gherkin em português, jest-cucumber). O SonarCloud roda só na `main` porque o plano gratuito da organização não libera resultados de outras branches.
+
+**Fluxo de branches:** `Dev` → `Homolog` → `main`, sempre por PR. As branches `main` e `Homolog` dos cinco repositórios têm um ruleset do GitHub: PR obrigatório, check de CI obrigatório e atualizado, sem push direto, force push ou exclusão. A configuração é feita pelo script [scripts/proteger-branch-main.sh](scripts/proteger-branch-main.sh).
+
+## Observabilidade
+
+New Relic em cada serviço (`oficina-api`, `oficina-billing`, `oficina-execution`), com:
+- **trace distribuído atravessando a saga**: o contexto do trace viaja no envelope do evento e continua no serviço que o consome;
+- **eventos customizados** da saga: `SagaEvento` (processado, retry ou DLQ, com latência), `SagaCompensacao`, `StatusOS` e outros;
+- **logs** JSON com `correlationId` = `osId`, ligados ao trace;
+- **dashboard** "Oficina - Saga e Microsserviços", versionado em [docs/observabilidade/dashboard-oficina.json](docs/observabilidade/dashboard-oficina.json) e criado com [scripts/criar-dashboard-newrelic.sh](scripts/criar-dashboard-newrelic.sh).
+
+Detalhes e consultas NRQL: [docs/observabilidade.md](docs/observabilidade.md).
+
+---
+
+## OS Service (este repositório)
+
+Dono do cadastro (clientes, veículos, serviços e peças), do estoque e do **status da OS**. Abre a OS, reserva o estoque, publica `os.aberta` e reage aos eventos do Billing e do Execution para mover a OS pela máquina de estados.
+
+### Endpoints
+
+Todos exigem `Authorization: Bearer <token>`, exceto `/login`, `/health`, `/health/live` e `/os/consulta/:id`. A documentação interativa fica em `/api-docs`.
+
+| Grupo | Endpoints |
+|---|---|
+| Autenticação | `POST /login` |
+| Clientes | `GET/POST /clientes`, `GET/PUT/DELETE /clientes/:id` |
+| Veículos | `GET/POST /veiculos`, `GET/PUT/DELETE /veiculos/:id` |
+| Serviços | `GET/POST /servicos`, `GET/PUT/DELETE /servicos/:id` |
+| Peças | `GET/POST /pecas`, `GET/PUT/DELETE /pecas/:id` |
+| Ordens de serviço | `POST /os` (abre a OS e reserva o estoque), `GET /os`, `GET /os/:id`, `GET /os/cliente/:documento`, `GET /os/consulta/:id`, `GET /os/:id/historico`, `GET /os/:id/servicos-finalizados`, `PATCH /os/:id/entregar` |
+| Interno (serviço a serviço) | `GET /internal/os/:id` com header `x-service-token` |
+| Saúde | `GET /health` (readiness), `GET /health/live` (liveness) |
+
+O status da OS não é alterado por rota: ele muda pelos eventos da saga. A exceção é a entrega (`PATCH /os/:id/entregar`).
+
+### Estrutura
+
+```text
+backEnd/
+├── src/
+│   ├── domain/             entidades, máquina de estados da OS (statusTransition.js), erros
+│   ├── application/        casos de uso, handlers da saga, fábrica de eventos
+│   ├── infrastructure/
+│   │   ├── database/       conexão pg e UnitOfWork (transação)
+│   │   ├── repositories/   OS, histórico, outbox, processed_events, cadastros
+│   │   ├── messaging/      RabbitMQ: conexão, topologia (retry/DLQ), consumer, outbox publisher
+│   │   └── observability/  propagação do trace distribuído
+│   └── interfaces/         rotas, controllers e middlewares (JWT, correlationId, service token)
+├── migrations/             node-pg-migrate (SQL)
+├── tests/                  unit, functional, integration e features (BDD)
+├── k8s/                    Deployment, Service, HPA, ConfigMap, Ingress e kustomization
+└── terraForm/              legado das fases anteriores (cluster local com Kind)
+docs/                       contratos de eventos e observabilidade
+Doc_Arquitetura/            documento de arquitetura e ADRs
+scripts/                    proteção de branch e criação do dashboard
 ```
 
-### Secrets e variáveis do repositório (GitHub → Settings → Secrets and variables → Actions)
+### Testes
+
+```bash
+cd backEnd
+npm run lint
+npm run test:unit                      # rápido, sem banco
+npm run test:bdd                       # cenários Gherkin da saga
+DB_URL=postgresql://postgres:postgres@localhost:5433/oficina npm run migrate:up
+DB_URL=postgresql://postgres:postgres@localhost:5433/oficina npm run test:coverage   # todos os testes, como no CI
+```
+
+### Variáveis de ambiente
+
+| Variável | Uso |
+|---|---|
+| `DB_URL` (ou `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`), `DB_SSL` | PostgreSQL |
+| `RABBITMQ_URL`, `RABBITMQ_RETRY_DELAY_MS`, `OUTBOX_POLL_INTERVAL_MS` | Mensageria. Sem `RABBITMQ_URL`, a API sobe e os eventos ficam no outbox |
+| `JWT_SECRET` | Assinatura do JWT (o mesmo nos três serviços e na Lambda) |
+| `SERVICE_TOKEN` | Autenticação da rota interna |
+| `MOCK_USER_EMAIL`, `MOCK_USER_PASSWORD`, `MOCK_USER_ID` | Usuário do `POST /login` |
+| `NEW_RELIC_LICENSE_KEY`, `NEW_RELIC_ENABLED` | Observabilidade |
+| `LOG_LEVEL` | Nível dos logs (pino) |
+
+No cluster, os valores sensíveis vêm do Secret `api-secret` (criado pelo CD a partir dos GitHub Secrets) e dos Secrets compartilhados `rabbitmq` e `service-auth`.
+
+### Secrets do repositório (GitHub → Settings → Secrets and variables → Actions)
 
 | Nome | Tipo | Uso |
 |---|---|---|
 | `DB_URL`, `JWT_SECRET`, `MOCK_USER_EMAIL`, `MOCK_USER_PASSWORD`, `MOCK_USER_ID`, `NEW_RELIC_LICENSE_KEY` | secret | conteúdo do `api-secret` |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | secret | push no ECR e deploy no EKS |
-| `SONAR_TOKEN` | secret | análise no SonarCloud (sem ele, o CI só avisa e segue) |
+| `SONAR_TOKEN` | secret | SonarCloud (sem ele, o CI só avisa e segue) |
 | `ECR_REPOSITORY` | variable (opcional) | padrão `os-service` |
 
-O namespace `os` e os Secrets `rabbitmq` e `service-auth` são criados pelo Terraform do repo `TechChallengerFiap-K8s`; o CD só confere que existem.
+## Documentação
 
-### Proteção da branch main
-
-PR obrigatório com 1 aprovação, check `ci` obrigatório (lint, testes e cobertura mínima de 80%; o Quality Gate do Sonar é verificado no CD, antes do deploy), sem push direto, sem force push. Configuração pela API do GitHub com o script do repo Application:
-
-```bash
-export GH_TOKEN=<token com permissão de administração do repositório>
-./scripts/proteger-branch-main.sh BrunoAmathias/TechChallengerFiap-Application
-```
-
-O check `ci` só aparece para seleção depois da primeira execução do workflow (abra um PR antes).
-
-## Deploy
-
-### Kubernetes
-
-```bash
-cd TechChallengerFiap-Application
-kubectl apply -f backEnd/k8s/
-```
-
-Principais recursos:
-
-- Deployment da API
-- Service LoadBalancer
-- PostgreSQL em um pod separado
-- PVC persistente
-- HPA para escalabilidade
-
-### Terraform
-
-```bash
-cd TechChallengerFiap-Application/backEnd/terraForm
-terraform init
-terraform plan
-terraform apply
-```
-
-## Passos para deploy e execução
-
-1. Preparar o banco PostgreSQL.
-2. Configurar variáveis de ambiente no arquivo `.env`.
-3. Rodar a aplicação localmente ou via Docker Compose.
-4. Validar a API no Swagger.
-5. Aplicar manifestos Kubernetes ou provisionar o ambiente com Terraform.
-6. Verificar health check:
-
-```bash
-curl http://localhost:3000/health
-```
-
-## Link para Swagger / Postman
-
-- Swagger principal da API: http://localhost:3000/api-docs
-- Swagger pode ser usado como documentação interativa dos endpoints.
-- Para uso em Postman, importe a documentação OpenAPI gerada em `/api-docs` e teste os endpoints em JSON.
-
-## Estrutura principal
-
-```text
-TechChallengerFiap-Application/
-├── backEnd/
-│   ├── src/
-│   ├── db/
-│   ├── k8s/
-│   ├── terraForm/
-│   ├── tests/
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   └── package.json
-├── README.md
-└── Doc_Arquitetura/
-```
-
-## Funcionalidades principais
-
-- Cadastro e consulta de clientes
-- Cadastro e consulta de veículos
-- Gestão de serviços e peças
-- Criação e acompanhamento de ordens de serviço
-- Aprovação de orçamento e evolução de status
-- Autenticação via JWT
-- Health check para Kubernetes
-
----
-
-## ✅ Funcionalidades
-
-### Autenticação
-- `POST /login` — Gera token JWT (credenciais via variáveis de ambiente)
-
-### Clientes
-- `GET /clientes` — Lista todos os clientes
-- `GET /clientes/:id` — Busca cliente por ID
-- `POST /clientes` — Cadastra novo cliente (validação de CPF/CNPJ)
-- `PUT /clientes/:id` — Atualiza dados do cliente
-- `DELETE /clientes/:id` — Remove cliente
-
-### Veículos
-- `GET /veiculos` — Lista todos os veículos
-- `GET /veiculos/:id` — Busca veículo por ID
-- `POST /veiculos` — Cadastra novo veículo (validação de placa)
-- `PUT /veiculos/:id` — Atualiza dados do veículo
-- `DELETE /veiculos/:id` — Remove veículo
-
-### Serviços
-- `GET /servicos` — Lista todos os serviços
-- `GET /servicos/:id` — Busca serviço por ID
-- `POST /servicos` — Cadastra novo serviço
-- `PUT /servicos/:id` — Atualiza serviço
-- `DELETE /servicos/:id` — Remove serviço
-
-### Peças
-- `GET /pecas` — Lista todas as peças
-- `GET /pecas/:id` — Busca peça por ID
-- `POST /pecas` — Cadastra nova peça
-- `PUT /pecas/:id` — Atualiza peça
-- `DELETE /pecas/:id` — Remove peça
-
-### Ordens de Serviço
-- `POST /os` — Abre nova ordem (recebe cliente, veículo, serviços e peças; retorna o identificador da OS)
-- `GET /os` — Lista ordens ordenadas por status (Em Execução > Aguardando Aprovação > Em diagnóstico > Recebida), excluindo Finalizadas e Entregues
-- `GET /os/:id` — Consulta a OS por ID
-- `GET /os/consulta/:id` — Consulta pública do status atual da OS
-- `GET /os/cliente/:documento` — Lista ordens por cliente
-- `PATCH /os/:id/status` — Atualiza status da OS
-- `PATCH /os/:id/approve` — Recebe aprovação ou recusa do orçamento
-- `PATCH /os/:id/advance` — Avança a OS para o próximo status
-- `GET /os/:id/servicos-finalizados` — Lista os serviços finalizados da OS
-
-### Saúde
-- `GET /health` — Endpoint de health check para liveness/readiness probes do Kubernetes
-
-> Todos os endpoints (exceto `/login` e `/health`) exigem autenticação via `Bearer Token`.
-
----
-
-## 📦 Pré-requisitos
-
-**Para execução local (Docker):**
-- [Docker](https://www.docker.com/) e [Docker Compose](https://docs.docker.com/compose/)
-
-**Para execução local (sem Docker):**
-- [Node.js 18+](https://nodejs.org/) e [PostgreSQL 15+](https://www.postgresql.org/)
-
-**Para deploy em Kubernetes:**
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) com Kubernetes habilitado, **ou** [Kind](https://kind.sigs.k8s.io/)
-- [kubectl](https://kubernetes.io/docs/tasks/tools/)
-
-**Para provisionamento com Terraform:**
-- [Terraform ≥ 1.5.0](https://developer.hashicorp.com/terraform/install)
-- [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/#installation) instalado e no PATH
-- [Docker](https://www.docker.com/) em execução
-
----
-
-## 🚀 Execução Local
-
-### Opção 1 — Com Docker Compose (recomendado)
-
-Sobe a API, o banco PostgreSQL e o pgAdmin em um único comando:
-
-```bash
-# 1. Clone o repositório e entre na pasta do backend
-cd backEnd
-
-# 2. Suba os containers
-docker-compose up --build
-```
-
-Serviços disponíveis após o start:
-
-| Serviço | URL |
+| Documento | Conteúdo |
 |---|---|
-| API | http://localhost:3000 |
-| Swagger | http://localhost:3000/api-docs |
-| pgAdmin | http://localhost:5050 |
-| PostgreSQL | localhost:5433 |
-
-Credenciais do pgAdmin: `admin@admin.com` / `admin`
-
-Para derrubar os containers:
-
-```bash
-docker-compose down
-```
-
-Para derrubar e remover os volumes (banco de dados):
-
-```bash
-docker-compose down -v
-```
-
----
-
-### Opção 2 — Sem Docker (execução direta com Node.js)
-
-**1. Instale as dependências:**
-
-```bash
-cd backEnd
-npm install
-```
-
-**2. Configure o banco de dados:**
-
-Crie o banco `oficina` no PostgreSQL e aplique as migrations versionadas (node-pg-migrate):
-
-```bash
-DB_URL=postgresql://postgres:<senha>@localhost:5432/oficina npm run migrate:up
-```
-
-**3. Configure o arquivo `.env`** (veja a seção [Variáveis de Ambiente](#-variáveis-de-ambiente))
-
-**4. Inicie o servidor:**
-
-```bash
-# Desenvolvimento (com hot reload)
-npm run dev
-
-# Produção
-npm start
-```
-
----
-
-## ☸️ Deploy em Kubernetes
-
-> Os manifestos YAML estão em `backEnd/k8s/`. Todos os comandos devem ser executados a partir da raiz do repositório.
-
-### Pré-requisito: build local da imagem Docker
-
-O deployment usa `imagePullPolicy: IfNotPresent`, portanto a imagem precisa estar disponível localmente no Docker antes de aplicar os manifestos:
-
-```bash
-docker build -t backend-api:latest ./backEnd
-```
-
-### 1. Aplicar todos os manifestos
-
-```bash
-kubectl apply -f backEnd/k8s/
-```
-
-Isso criará, na ordem resolvida pelo Kubernetes:
-
-1. `api-configmap.yaml` — ConfigMap com variáveis não-sensíveis
-2. `api-secret.yaml` — Secret com variáveis sensíveis
-3. `postgres-pvc.yaml` — Volume persistente para o PostgreSQL
-4. `postgres-deployment.yaml` — Deployment do PostgreSQL
-5. `postgres-service.yaml` — Service interno do PostgreSQL
-6. `api-deployment.yaml` — Deployment da API (2 réplicas)
-7. `api-service.yaml` — Service LoadBalancer da API
-8. `api-hpa.yaml` — HPA (escala de 2 a 10 pods)
-
-### 2. Verificar o status dos pods
-
-```bash
-kubectl get pods
-kubectl get deployments
-kubectl get svc
-kubectl get hpa
-```
-
-Aguarde todos os pods estarem com status `Running` e `READY 1/1` ou `2/2`.
-
-### 3. Acessar a API
-
-**Docker Desktop:** O service é do tipo `LoadBalancer`, mas no Docker Desktop o port-forward é necessário:
-
-```bash
-kubectl port-forward service/api-service 3000:3000
-```
-
-A API estará disponível em: `http://localhost:3000`
-
-**Kind / Minikube:** Use o IP do cluster ou port-forward igualmente:
-
-```bash
-# Kind — port-forward é o método recomendado
-kubectl port-forward service/api-service 3000:3000
-
-# Minikube — pode usar o IP diretamente
-minikube service api-service --url
-```
-
-### 4. Verificar health check
-
-```bash
-curl http://localhost:3000/health
-# Esperado: { "status": "ok" }
-```
-
-### 5. Remover todos os recursos
-
-```bash
-kubectl delete -f backEnd/k8s/
-```
-
----
-
-## 🌍 Provisionamento com Terraform
-
-> Os scripts Terraform estão em `backEnd/terraForm/`. Eles provisionam um cluster Kind local e todos os recursos Kubernetes dentro dele — alternativa ao deploy manual com `kubectl`.
-
-### O que o Terraform provisiona
-
-| Recurso | Tipo | Descrição |
-|---|---|---|
-| `oficina-cluster` | `kind_cluster` | Cluster Kubernetes local com 1 control-plane + 1 worker |
-| `api-secret` | `kubernetes_secret` | Credenciais sensíveis da aplicação |
-| `api-config` | `kubernetes_config_map` | Variáveis de ambiente não-sensíveis |
-| `postgres-pvc` | `kubernetes_persistent_volume_claim` | Volume de 1Gi para o PostgreSQL |
-| `postgres` | `kubernetes_deployment` | Deploy do PostgreSQL 15 |
-| `postgres-service` | `kubernetes_service` | Service ClusterIP do PostgreSQL |
-| `oficina-api` | `kubernetes_deployment` | Deploy da API com 2 réplicas |
-| `api-service` | `kubernetes_service` | Service LoadBalancer da API |
-| `api-hpa` | `kubernetes_horizontal_pod_autoscaler_v2` | HPA com escala por CPU e memória |
-
-### Pré-requisitos
-
-- Terraform ≥ 1.5.0 instalado
-- Kind instalado e no PATH
-- Docker em execução
-- Imagem Docker da API construída localmente:
-
-```bash
-docker build -t backend-api:latest ./backEnd
-```
-
-### Passos para provisionar
-
-```bash
-# 1. Entre na pasta do Terraform
-cd backEnd/terraForm
-
-# 2. Inicialize os providers (baixa hashicorp/kubernetes e tehcyx/kind)
-terraform init
-
-# 3. Revise o plano de execução
-terraform plan
-
-# 4. Aplique a infraestrutura
-terraform apply
-```
-
-Confirme com `yes` quando solicitado. O processo cria o cluster Kind, aguarda ele ficar pronto e aplica todos os recursos Kubernetes.
-
-### Variáveis configuráveis
-
-As variáveis estão em `terraform.tfvars`. Os principais valores são:
-
-| Variável | Padrão | Descrição |
-|---|---|---|
-| `cluster_name` | `oficina-cluster` | Nome do cluster Kind |
-| `api_image` | `backend-api:latest` | Imagem Docker da API |
-| `api_replicas` | `2` | Réplicas iniciais da API |
-| `db_name` | `oficina` | Nome do banco de dados |
-| `db_user` | `postgres` | Usuário do PostgreSQL |
-| `db_password` | _(sensível)_ | Senha do PostgreSQL |
-| `jwt_secret` | _(sensível)_ | Chave secreta JWT |
-| `postgres_storage` | `1Gi` | Tamanho do volume persistente |
-
-Para sobrescrever variáveis sem editar o arquivo:
-
-```bash
-terraform apply -var="db_password=minha_senha" -var="jwt_secret=meu_secret"
-```
-
-### Outputs após o apply
-
-```bash
-terraform output
-```
-
-Exibe:
-
-- `cluster_name` — Nome do cluster criado
-- `kubeconfig_path` — Caminho do kubeconfig gerado pelo Kind
-- `api_url` — URL local para acessar a API
-- `postgres_service_name` — Nome do Service interno do PostgreSQL
-- `api_service_name` — Nome do Service da API
-
-### Acessar a API após o Terraform
-
-```bash
-kubectl port-forward service/api-service 3000:3000
-```
-
-### Destruir a infraestrutura
-
-```bash
-terraform destroy
-```
-
----
-
-## 🔐 Variáveis de Ambiente
-
-Crie um arquivo `.env` na raiz de `backEnd/` com o seguinte conteúdo:
-
-```env
-# Banco de dados
-DB_USER=postgres
-DB_HOST=localhost        # use "db" se estiver rodando via Docker
-DB_NAME=oficina
-DB_PASSWORD=sua_senha
-DB_PORT=5433             # porta mapeada do Docker; use 5432 para local
-
-# Usuário mock para autenticação
-MOCK_USER_EMAIL=admin@oficina.com
-MOCK_USER_PASSWORD=123456
-MOCK_USER_ID=1
-
-# JWT
-JWT_SECRET=seu_segredo_aqui
-```
-
-> Para testes de integração, existe um `.env.test` separado com as configurações do banco de teste.
-
----
-
-## 📖 Documentação da API
-
-Com a aplicação rodando, acesse o Swagger UI em:
-
-```
-http://localhost:3000/api-docs
-```
-
-Todos os endpoints estão documentados com exemplos de request/response e esquemas de dados.
-
-**Para autenticar no Swagger:**
-1. Chame `POST /login` com email e senha
-2. Copie o token retornado
-3. Clique em **Authorize** (canto superior direito) e cole o token no campo `bearerAuth`
-
----
-
-## 🧪 Testes
-
-O projeto possui três níveis de testes:
-
-### Testes Unitários
-
-Testam as regras de negócio do Domain e os casos de uso da Application de forma isolada, sem dependência do banco.
-
-```bash
-npm run test:unit
-```
-
-### Testes de Integração
-
-Testam os repositórios conectando ao banco de dados real (usando o `.env.test`).
-
-```bash
-npm run test:integration
-```
-
-Ou via Docker:
-
-```bash
-docker-compose run api-test
-```
-
-### Testes Funcionais
-
-Testam os endpoints de ponta a ponta (HTTP → banco).
-
-```bash
-npm run test:functional
-```
-
-### Todos os testes
-
-```bash
-npm test
-```
-
----
-
-## 🔄 CI/CD
-
-O pipeline está configurado em `.github/workflows/ci-cd.yml` e é disparado em pushes para as branches `master` e `main`.
-
-**Etapas do pipeline:**
-
-1. Checkout do código
-2. Setup do Node.js 20
-3. Instalação das dependências (`npm install`)
-4. Build da aplicação
-5. Execução dos testes unitários
-6. Execução dos testes funcionais
-7. Criação do `.env.test` para CI
-8. Verificação da conexão com o PostgreSQL de serviço
-9. Inicialização do banco de dados com os scripts SQL
-10. Execução dos testes de integração
-11. Login no Docker Hub
-12. Build da imagem Docker (`bruno0games/backend-api:latest`)
-13. Push da imagem para o Docker Hub
-14. Atualização do manifesto `api-deployment.yaml` com a nova imagem
-15. Criação de cluster Kind via `helm/kind-action@v1`
-16. Aplicação dos manifestos Kubernetes (`kubectl apply -f backEnd/k8s/`)
-17. Verificação dos recursos criados no cluster
-
-**Secrets necessários no GitHub:**
-
-| Secret | Descrição |
-|---|---|
-| `DOCKER_USER` | Usuário do Docker Hub |
-| `DOCKER_PASSWORD` | Senha/token do Docker Hub |
-| `MOCK_USER_EMAIL` | E-mail do usuário mock |
-| `MOCK_USER_PASSWORD` | Senha do usuário mock |
-| `MOCK_USER_ID` | ID do usuário mock |
-
----
-
-## 📁 Estrutura do Projeto
-
-```
-TechChallengerFiap/
-├── .github/
-│   └── workflows/
-│       └── ci-cd.yml                # Pipeline GitHub Actions
-├── backEnd/
-│   ├── db/
-│   │   └── init/                    # Scripts SQL de criação das tabelas
-│   │       ├── 01_clientes.sql
-│   │       ├── 02_veiculos.sql
-│   │       ├── 03_servicos.sql
-│   │       ├── 04_pecas.sql
-│   │       ├── 05_ordens_servico.sql
-│   │       ├── 06_os_servicos.sql
-│   │       └── 07_os_pecas.sql
-│   ├── k8s/                         # Manifestos Kubernetes
-│   │   ├── api-configmap.yaml
-│   │   ├── api-deployment.yaml
-│   │   ├── api-hpa.yaml
-│   │   ├── api-secret.yaml
-│   │   ├── api-service.yaml
-│   │   ├── postgres-deployment.yaml
-│   │   ├── postgres-pvc.yaml
-│   │   └── postgres-service.yaml
-│   ├── terraForm/                   # Infraestrutura como Código
-│   │   ├── main.tf
-│   │   ├── variables.tf
-│   │   ├── outputs.tf
-│   │   └── terraform.tfvars
-│   ├── src/
-│   │   ├── application/             # Casos de uso
-│   │   │   ├── auth.service.js
-│   │   │   ├── cliente.service.js
-│   │   │   ├── veiculo.service.js
-│   │   │   ├── servico.service.js
-│   │   │   ├── peca.service.js
-│   │   │   ├── ordemServico.service.js
-│   │   │   └── notification.service.js
-│   │   ├── domain/                  # Entidades e validações de negócio
-│   │   │   ├── cliente.js
-│   │   │   ├── veiculo.js
-│   │   │   ├── servico.js
-│   │   │   ├── peca.js
-│   │   │   ├── ordemServico.js
-│   │   │   └── statusTransition.js
-│   │   ├── infrastructure/          # Repositórios e conexão com banco
-│   │   │   ├── database/
-│   │   │   │   └── connection.js
-│   │   │   ├── repositories/
-│   │   │   │   ├── auth.repository.js
-│   │   │   │   ├── cliente.repository.js
-│   │   │   │   ├── veiculo.repository.js
-│   │   │   │   ├── servico.repository.js
-│   │   │   │   ├── peca.repository.js
-│   │   │   │   └── ordemServico.repository.js
-│   │   │   └── utils/
-│   │   │       └── cpf-validator.js
-│   │   └── interfaces/              # Controllers, rotas e middlewares
-│   │       ├── controllers/
-│   │       │   ├── auth.controller.js
-│   │       │   ├── cliente.controller.js
-│   │       │   ├── veiculo.controller.js
-│   │       │   ├── servico.controller.js
-│   │       │   ├── peca.controller.js
-│   │       │   ├── ordemServico.controller.js
-│   │       │   └── health.k8s.controller.js
-│   │       ├── middlewares/
-│   │       │   └── auth.middleware.js
-│   │       └── routes/
-│   │           ├── auth.routes.js
-│   │           ├── cliente.routes.js
-│   │           ├── veiculo.routes.js
-│   │           ├── servico.routes.js
-│   │           ├── peca.routes.js
-│   │           ├── ordemServico.routes.js
-│   │           └── health.k8s.routes.js
-│   │   ├── server.js
-│   │   └── swagger.config.js
-│   ├── tests/
-│   │   ├── unit/
-│   │   ├── integration/
-│   │   └── functional/
-│   ├── .env
-│   ├── .env.test
-│   ├── Dockerfile
-│   ├── docker-compose.yml
-│   └── package.json
-└── README.md
-```
-
----
-
-## 🗄 Banco de Dados
-
-O schema é versionado em `backEnd/migrations/` (node-pg-migrate). As migrations rodam no CI, no serviço `migrate` do docker-compose e como `initContainer` no deploy do Kubernetes. As tabelas atuais são:
-
-1. `clientes` — dados dos clientes com CPF/CNPJ único
-2. `veiculos` — veículos com placa única
-3. `servicos` — catálogo de serviços disponíveis
-4. `pecas` — estoque de peças
-5. `ordens_servico` — ordens de serviço vinculadas a clientes e veículos
-6. `os_servicos` — serviços vinculados a uma ordem
-7. `os_pecas` — peças utilizadas em uma ordem
-
-Todas as tabelas possuem campos `created_at` e `updated_at` gerenciados automaticamente por triggers.
-
----
-
-## 🏛️ Arquitetura Implementada
-
-A aplicação segue a organização em camadas e o fluxo de comunicação abaixo:
-
-```text
-Cliente HTTP
-  ↓
-interfaces/routes
-  ↓
-interfaces/controllers
-  ↓
-application/services
-  ↓
-domain/entities
-  ↓
-infrastructure/repositories
-  ↓
-PostgreSQL
-```
-
-A separação de responsabilidades é a seguinte:
-
-- `domain/`: entidades e regras de negócio;
-- `application/`: serviços com orquestração dos casos de uso;
-- `infrastructure/`: conexão com o banco, repositórios e utilitários;
-- `interfaces/`: rotas, controladores e middlewares HTTP.
-
-Essa arquitetura permite manter regras de negócio independentes da infraestrutura, com persistência e gestão de endpoints isolados por camada.
-
----
-
-## 🧩 Repositórios Complementares
-
-O ecossistema TechChallengerFiap é composto por repositórios com responsabilidades bem definidas:
-
-| Repositório | Função |
-|---|---|
-| `TechChallengerFiap-Application` | API RESTful em Node.js/Express com endpoints de clientes, veículos, serviços, peças e ordens de serviço. |
-| `TechChallengerFiap-DB` | Infraestrutura de provisionamento do projeto PostgreSQL em Neon via Terraform. |
-| `TechChallengerFiap-K8s` | Infraestrutura de cluster EKS, addons Kubernetes, IAM, Load Balancer Controller e deploy via Helm/Terraform. |
-| `TechChallengerFiap-ServerLess` | Função serverless em JavaScript com validação de CPF, consulta em PostgreSQL e emissão de token JWT. |
-
-O fluxo de dados entre os repositórios segue a separação de responsabilidades:
-
-```text
-TechChallengerFiap-Application -> API principal
-TechChallengerFiap-DB -> banco PostgreSQL gerenciado
-TechChallengerFiap-K8s -> orquestração e exposição da API
-TechChallengerFiap-ServerLess -> função serverless complementar
-```
+| [Doc_Arquitetura/Arquitetura_Microsservicos_Fase4.md](Doc_Arquitetura/Arquitetura_Microsservicos_Fase4.md) | Arquitetura da Fase 4: componentes, saga, compensações, implantação, segurança e validação |
+| [Doc_Arquitetura/adr/](Doc_Arquitetura/adr/README.md) | Decisões de arquitetura da Fase 4 (ADR-008 a ADR-015) |
+| [Doc_Arquitetura/Documentacao_Arquitetura_TechChallenge.md](Doc_Arquitetura/Documentacao_Arquitetura_TechChallenge.md) | Arquitetura v1.0 (monólito), RFCs e ADR-001 a ADR-007 |
+| [docs/eventos.md](docs/eventos.md) | Contratos de eventos, envelope, garantias e máquina de estados da OS |
+| [docs/observabilidade.md](docs/observabilidade.md) | New Relic: trace distribuído, eventos customizados, logs e dashboard |

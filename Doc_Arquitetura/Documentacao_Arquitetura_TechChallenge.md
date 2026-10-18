@@ -14,6 +14,8 @@ Data: 10 de setembro de 2026
 
 Estado: Arquitetura implementada e validada em ambiente de desenvolvimento
 
+> **Fase 4:** o monólito descrito aqui foi dividido em três microsserviços (OS Service, Billing e Execution) com saga coreografada via RabbitMQ. A arquitetura atual está em [Arquitetura_Microsservicos_Fase4.md](Arquitetura_Microsservicos_Fase4.md) e as novas decisões em [adr/](adr/README.md). Este documento fica como registro da versão 1.0; as ADR-001 a ADR-007 continuam válidas dentro de cada serviço.
+
 # Controle do documento
 
 | **Campo** | **Valor** |
