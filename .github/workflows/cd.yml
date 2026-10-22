@@ -17,7 +17,9 @@ env:
   EKS_CLUSTER_NAME: techchallenge-dev
   NAMESPACE: os
   DEPLOYMENT: oficina-api
-  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY || 'os-service' }}
+  # Repositório criado pelo Terraform do repo K8s (ecr.tf). Fixo de propósito: uma
+  # variável ECR_REPOSITORY antiga (repo ou environment) apontava para o ECR do monólito.
+  ECR_REPOSITORY: os-service
 
 jobs:
   # Mesmos testes, lint, cobertura e Sonar do CI antes de qualquer deploy
