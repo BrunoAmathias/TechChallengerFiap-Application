@@ -254,7 +254,6 @@ No cluster, os valores sensíveis vêm do Secret `api-secret` (criado pelo CD a 
 | `DB_URL`, `JWT_SECRET`, `MOCK_USER_EMAIL`, `MOCK_USER_PASSWORD`, `MOCK_USER_ID`, `NEW_RELIC_LICENSE_KEY` | secret | conteúdo do `api-secret` |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION` | secret | push no ECR e deploy no EKS |
 | `SONAR_TOKEN` | secret | SonarCloud (sem ele, o CI só avisa e segue) |
-| `ECR_REPOSITORY` | variable (opcional) | padrão `os-service` |
 
 ## Documentação
 
