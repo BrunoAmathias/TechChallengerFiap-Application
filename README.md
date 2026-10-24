@@ -1,5 +1,10 @@
 # Oficina Mecânica — Tech Challenge FIAP
 
+[![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=BrunoAmathias_TechChallengerFiap&metric=alert_status)](https://sonarcloud.io/summary/overall?id=BrunoAmathias_TechChallengerFiap)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=BrunoAmathias_TechChallengerFiap&metric=coverage)](https://sonarcloud.io/summary/overall?id=BrunoAmathias_TechChallengerFiap)
+[![Bugs](https://sonarcloud.io/api/project_badges/measure?project=BrunoAmathias_TechChallengerFiap&metric=bugs)](https://sonarcloud.io/summary/overall?id=BrunoAmathias_TechChallengerFiap)
+[![Vulnerabilities](https://sonarcloud.io/api/project_badges/measure?project=BrunoAmathias_TechChallengerFiap&metric=vulnerabilities)](https://sonarcloud.io/summary/overall?id=BrunoAmathias_TechChallengerFiap)
+
 Plataforma de gestão de oficina mecânica: abertura de ordens de serviço (OS), orçamento com aprovação do cliente, pagamento online pelo Mercado Pago e acompanhamento da execução pela oficina.
 
 Na **Fase 4**, o monólito foi dividido em **três microsserviços** que se coordenam por uma **saga coreografada** sobre RabbitMQ. Este repositório tem o **OS Service** e a documentação geral do sistema.
@@ -90,6 +95,27 @@ sequenceDiagram
 
 Contratos de todos os eventos, envelope e máquina de estados: [docs/eventos.md](docs/eventos.md).
 
+### Por que saga coreografada, e não orquestrada
+
+O enunciado permite os dois estilos. Escolhemos a **coreografia**: não existe um orquestrador central; cada serviço reage aos eventos dos outros e publica os próprios.
+
+| Critério | Coreografia (escolhida) | Orquestração (descartada) |
+|---|---|---|
+| Formato do fluxo | Quatro etapas lineares, cada uma com **um único dono**: OS abre, Billing orça e cobra, Execution executa, OS entrega. Cada serviço sabe sozinho o que fazer ao receber um evento | Compensaria um fluxo com muitas ramificações, decisões ou etapas paralelas, o que não é o caso aqui |
+| Acoplamento | Cada serviço depende só dos **contratos de eventos** ([docs/eventos.md](docs/eventos.md)), não de outro serviço | Todos passariam a depender do orquestrador, que conhece as regras de todos |
+| Disponibilidade | Se um serviço cai, os eventos esperam na fila dele e são processados quando ele volta. Os demais seguem funcionando | O orquestrador vira ponto único de falha e precisaria guardar o estado de cada saga |
+| Infraestrutura | Usa só o RabbitMQ, que já era necessário | Exigiria mais um componente (serviço próprio ou AWS Step Functions) para construir, implantar e monitorar |
+| Requisito da fase | Os 3 microsserviços continuam independentes, com repositório, banco e deploy próprios | Um quarto serviço central concentraria a lógica de todos |
+
+**Custo da escolha e como foi tratado.** Na coreografia, o fluxo fica espalhado entre os serviços e é mais difícil de enxergar. Para compensar:
+- a **máquina de estados** da OS fica em um lugar só, no OS Service, que é a fonte da verdade do status e rejeita transições inválidas;
+- todo evento carrega o **`osId` como `correlationId`**, e o histórico da OS (`GET /os/:id/historico`) registra qual serviço e qual evento mudou cada status;
+- o **trace distribuído** do New Relic atravessa os três serviços pelos eventos, e o evento `SagaEvento` registra cada passo, retry ou ida para a DLQ.
+
+**Confiabilidade sem orquestrador.** Cada passo grava a mudança e o evento na mesma transação (**Transactional Outbox**), os consumidores são **idempotentes** (`processed_events`), falhas temporárias têm **retry** e falhas definitivas vão para a **DLQ**. As **compensações** desfazem o que já foi feito: cancelam a OS, devolvem o estoque e estornam o pagamento no Mercado Pago.
+
+Se a saga crescer, com muitas etapas ou decisões condicionais, a recomendação é migrar para orquestração. A decisão completa, com alternativas e consequências, está na [ADR-009](Doc_Arquitetura/adr/ADR-009-saga-coreografada.md).
+
 ## Como rodar localmente
 
 Pré-requisitos: Docker Desktop e Node.js 20.
@@ -157,11 +183,19 @@ Cada repositório tem pipelines próprios:
 | `ci.yml` | PR para `Dev`, `Homolog` e `main`; push em `Dev` e `Homolog` | lint, migrations num Postgres de serviço, testes com **cobertura mínima de 80%** (inclui BDD), `docker build` |
 | `cd.yml` | merge na `main` | CI completo com **SonarCloud e Quality Gate** (reprovação bloqueia o deploy), imagem no ECR (tag = SHA), Secret do serviço, `kubectl kustomize` + apply, rollout e smoke test |
 
-| Serviço | Testes | Linhas | Branches |
-|---|---|---|---|
-| OS Service | 258 | 97,3% | 85,9% |
-| Billing | 142 | 97,0% | 85,3% |
-| Execution | 77 | 98,5% | 84,6% |
+### Cobertura de testes
+
+Resultado de `npm run test:coverage` em cada serviço (todos os testes: unitários, BDD e integração com o banco real de cada um), medido em 24/10/2026. O CI falha se qualquer métrica ficar abaixo de **80%** (`coverageThreshold` do `jest.config.js`):
+
+| Serviço | Testes | Statements | Branches | Funções | Linhas | SonarCloud |
+|---|---|---|---|---|---|---|
+| OS Service | 258 (30 suítes) | 96,8% | 85,87% | 95,39% | 97,26% | [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=BrunoAmathias_TechChallengerFiap&metric=coverage)](https://sonarcloud.io/summary/overall?id=BrunoAmathias_TechChallengerFiap) [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=BrunoAmathias_TechChallengerFiap&metric=alert_status)](https://sonarcloud.io/summary/overall?id=BrunoAmathias_TechChallengerFiap) |
+| Billing | 142 (10 suítes) | 96,11% | 85,32% | 90,52% | 96,99% | [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=BrunoAmathias_TechChallengerFiap-Billing&metric=coverage)](https://sonarcloud.io/summary/overall?id=BrunoAmathias_TechChallengerFiap-Billing) [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=BrunoAmathias_TechChallengerFiap-Billing&metric=alert_status)](https://sonarcloud.io/summary/overall?id=BrunoAmathias_TechChallengerFiap-Billing) |
+| Execution | 77 (8 suítes) | 97,44% | 84,64% | 94,11% | 98,5% | [![Coverage](https://sonarcloud.io/api/project_badges/measure?project=BrunoAmathias_TechChallengerFiap-Execution&metric=coverage)](https://sonarcloud.io/summary/overall?id=BrunoAmathias_TechChallengerFiap-Execution) [![Quality Gate](https://sonarcloud.io/api/project_badges/measure?project=BrunoAmathias_TechChallengerFiap-Execution&metric=alert_status)](https://sonarcloud.io/summary/overall?id=BrunoAmathias_TechChallengerFiap-Execution) |
+
+- Os badges e os links levam ao relatório do SonarCloud, atualizado a cada deploy da `main`. O SonarCloud mostra uma única métrica de "coverage", que combina linhas e branches.
+- Relatório por arquivo: depois de `npm run test:coverage`, abra `coverage/lcov-report/index.html` no serviço.
+- No CI: a etapa "Testes ... com cobertura mínima de 80%" do job `ci` (aba **Actions** de cada repositório) mostra o resumo.
 
 Os cenários **BDD** ficam em `tests/features/*.feature` (Gherkin em português, jest-cucumber). O SonarCloud roda só na `main` porque o plano gratuito da organização não libera resultados de outras branches.
 
